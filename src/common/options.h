@@ -24,6 +24,12 @@ struct Options {
     uint32_t fov = 70;  // horizontal degrees on a 4:3 frame, 70 is the game's
     uint32_t viewmodel_fov = 70;  // the gun and arms, the same measure
     uint32_t walk_speed = 50;  // percent of running, while the walk key is held
+    // a controller's sticks: the radial dead zone as percent of the travel, 0 the game's own, and what the travel
+    // past it is scaled by; the left stick moves, the right looks
+    uint32_t left_deadzone = 0;
+    uint32_t right_deadzone = 0;
+    float left_sensitivity = 1.0f;
+    float right_sensitivity = 1.0f;
     uint32_t audio_output = 0;  // audio::kOutputAuto, kOutputStereo, kOutputSurround or kOutputMono
     std::string language = "int";  // one of kLanguages
     bool infinite_ammo = false;  // cheat: the player's magazine and reserve never go down

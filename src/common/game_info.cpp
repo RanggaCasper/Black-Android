@@ -35,6 +35,8 @@ void Load(const void* table) {
     o.mouse_sensitivity = float(t["mouse_sensitivity"].value_or(double(o.mouse_sensitivity)));
     // the touch screen followed the mouse's before it had its own: a player's choice carries over
     o.touch_sensitivity = float(t["touch_sensitivity"].value_or(double(o.mouse_sensitivity)));
+    o.left_sensitivity = float(t["left_stick_sensitivity"].value_or(double(o.left_sensitivity)));
+    o.right_sensitivity = float(t["right_stick_sensitivity"].value_or(double(o.right_sensitivity)));
     std::string language = t["language"].value_or(o.language);
     bool known = std::find(std::begin(kLanguages), std::end(kLanguages), language) != std::end(kLanguages);
     if (known) o.language = language;
@@ -55,6 +57,8 @@ void Save(void* table) {
     const Options& o = Opt();
     t.insert("mouse_sensitivity", double(o.mouse_sensitivity));
     t.insert("touch_sensitivity", double(o.touch_sensitivity));
+    t.insert("left_stick_sensitivity", double(o.left_sensitivity));
+    t.insert("right_stick_sensitivity", double(o.right_sensitivity));
     t.insert("language", o.language);
     toml::table keys;
     for (const auto& [id, value] : o.keys) keys.insert(id, value);
@@ -92,6 +96,8 @@ const app::GameInfo app::kGame = {
                 {"invert_mouse", &game::Opt().invert_mouse, nullptr},
                 {"hold_aim", &game::Opt().hold_aim, nullptr},
                 {"walk_speed", nullptr, &game::Opt().walk_speed},
+                {"left_stick_deadzone", nullptr, &game::Opt().left_deadzone},
+                {"right_stick_deadzone", nullptr, &game::Opt().right_deadzone},
                 {"fov", nullptr, &game::Opt().fov},
                 {"draw_distance", nullptr, &game::Opt().draw_distance},
                 {"viewmodel_fov", nullptr, &game::Opt().viewmodel_fov},

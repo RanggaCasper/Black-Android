@@ -5,6 +5,7 @@
 #include <jni.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <iterator>
 #include <mutex>
@@ -12,6 +13,7 @@
 #include <SDL3/SDL.h>
 
 #include "app/app.h"
+#include "common/options.h"
 #include "core/log.h"
 #include "host.h"
 
@@ -127,6 +129,31 @@ void MergeLoose(Pad& p) {
     further(p.ry, Axis(-l.ry));
 }
 
+// A stick's dead zone is radial: a push in any direction counts once it is deadzone percent of the way out, and
+// the travel past it runs from rest to full again, times the sensitivity. Axial dead zones (each axis on its own)
+// would make a slow turn snap to the axes. The game keeps its own dead zone: at 0 and 1 the stick passes as it is,
+// each axis clamped to its range rather than the pair to a circle, as the console's sticks reach the corners.
+void Shape(int16_t& x, int16_t& y, uint32_t deadzone, float sensitivity) {
+    if (!deadzone && sensitivity == 1.0f) return;
+    constexpr float kFull = 32767.0f;
+    float fx = float(x) / kFull, fy = float(y) / kFull;
+    float m = std::sqrt(fx * fx + fy * fy);
+    float dz = std::min(float(deadzone), 90.0f) / 100.0f;
+    if (m <= dz) {
+        x = y = 0;
+        return;
+    }
+    float k = (m - dz) / (1.0f - dz) * sensitivity / m;
+    x = Axis(fx * k);
+    y = Axis(fy * k);
+}
+
+void ShapeSticks(Pad& p) {
+    const game::Options& o = game::Opt();
+    Shape(p.lx, p.ly, o.left_deadzone, o.left_sensitivity);
+    Shape(p.rx, p.ry, o.right_deadzone, o.right_sensitivity);
+}
+
 }  // namespace
 
 // BlackActivity: the loose controller's buttons, sticks and triggers, and its letting go when the app loses the focus
@@ -185,6 +212,7 @@ Pad Poll(int port) {
     constexpr int16_t kStickPushed = 16000;
     auto pushed = [](int16_t v) { return v > kStickPushed || v < -kStickPushed; };
     if (port == 0) MergeLoose(p);
+    ShapeSticks(p);
     bool analog = std::any_of(std::begin(p.analog), std::end(p.analog), [](uint8_t a) { return a > 0x20; });
     if (p.buttons || analog || pushed(p.lx) || pushed(p.ly) || pushed(p.rx) || pushed(p.ry)) touch::PadUsed();
     touch::Apply(port, p);

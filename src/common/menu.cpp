@@ -226,7 +226,7 @@ enum RowId { kRenderResolution, kMaxFps, kVsync, kFpsCounter, kAniso, kReloadBlu
              kInvertMouse, kWalkSpeed, kFov, kViewmodelFov, kHoldAim, kDrawDistance, kAudioOutput, kLanguage,
              kFmvScale, kGyro, kGyroSensitivity, kTouchLayout, kTouchOpacity, kTouchSize, kTouchEdit,
              kInfiniteAmmo, kRapidFire, kNoRecoil, kGameSpeed, kGodMode, kOneHitKill, kInfiniteGrenades,
-             kCheckUpdates, kTouchSensitivity };
+             kCheckUpdates, kTouchSensitivity, kLeftDeadzone, kRightDeadzone, kLeftSensitivity, kRightSensitivity };
 
 using rows::Kind;
 using rows::Row;
@@ -258,6 +258,11 @@ constexpr Row kTouchRows[] = {
     {Kind::Heading, -1, "MOTION CONTROLS"},
     {Kind::Value, kGyro, "GYROSCOPE"},
     {Kind::Value, kGyroSensitivity, "GYRO SENSITIVITY"},
+    {Kind::Heading, -1, "CONTROLLER"},
+    {Kind::Value, kLeftDeadzone, "LEFT STICK DEADZONE"},
+    {Kind::Value, kRightDeadzone, "RIGHT STICK DEADZONE"},
+    {Kind::Value, kLeftSensitivity, "LEFT STICK SENSITIVITY"},
+    {Kind::Value, kRightSensitivity, "RIGHT STICK SENSITIVITY"},
 };
 
 // LANGUAGE always shows: Indonesian is there whatever the disc
@@ -460,6 +465,22 @@ void StepInputRow(int id, int step, char (&text)[64]) {
             if (step) gyro::SetSensitivity(float(StepRange(int(std::lround(gyro::Sensitivity() * 10.0f)), 1, 50, 1, step)) / 10.0f);
             std::snprintf(text, sizeof(text), "%.1f", gyro::Sensitivity());
             break;
+        case kLeftDeadzone:
+        case kRightDeadzone: {
+            // 0% to 50% of the stick's travel in steps of 1, 0 leaves the game's own
+            uint32_t& dz = id == kLeftDeadzone ? o.left_deadzone : o.right_deadzone;
+            if (step) dz = uint32_t(StepRange(int(dz), 0, 50, 1, step));
+            std::snprintf(text, sizeof(text), dz ? "%u%%" : "%u%% (DEFAULT)", dz);
+            break;
+        }
+        case kLeftSensitivity:
+        case kRightSensitivity: {
+            // 0.1 to 3.0 in steps of 0.1
+            float& s = id == kLeftSensitivity ? o.left_sensitivity : o.right_sensitivity;
+            if (step) s = float(StepRange(int(std::lround(s * 10.0f)), 1, 30, 1, step)) / 10.0f;
+            std::snprintf(text, sizeof(text), "%.1f", s);
+            break;
+        }
         case kLanguage: {
             int count = int(std::size(game::kLanguages));
             int i = 0;
