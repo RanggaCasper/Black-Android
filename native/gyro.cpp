@@ -34,6 +34,8 @@ bool g_no_sensor = false;   // the phone has no gyroscope
 bool g_pad_gyro = false;    // a controller's is on
 uint64_t g_last_ns = 0;
 uint64_t g_pad_last_ns = 0;
+uint64_t g_pad_received_ns = 0;
+constexpr uint64_t kPadGyroTimeoutNs = 250000000;  // fall back after 250 ms without usable pad motion
 
 std::filesystem::path File() { return app::ExeDir() / "android.toml"; }
 
@@ -131,17 +133,30 @@ bool PumpPads(bool want) {
                 if (want) LOGI("gyro: %s's own", SDL_GetGamepadName(pad));
                 g_pad_last_ns = 0;
             }
-            any = true;
+            // Report an enabled sensor, not merely an advertised capability.
+            if (want && SDL_GamepadSensorEnabled(pad, SDL_SENSOR_GYRO)) any = true;
         }
         SDL_free(ids);
     }
     return any;
 }
 
+// Only recent usable controller motion takes priority over the phone.
+bool PadGyroActive() {
+    if (!g_pad_gyro || !g_pad_received_ns) return false;
+    uint64_t now = SDL_GetTicksNS();
+    return now >= g_pad_received_ns &&
+           now - g_pad_received_ns < kPadGyroTimeoutNs;
+}
+
 void Pump() {
     if (!g_loaded) Load();
     bool want = g_mode != kOff && host::Foreground();
     g_pad_gyro = PumpPads(want);
+    if (!g_pad_gyro) {
+        g_pad_received_ns = 0;
+        g_pad_last_ns = 0;
+    }
     if (want == (g_sensor != nullptr) || g_no_sensor) return;
     if (!want) {
         SDL_CloseSensor(g_sensor);
@@ -154,9 +169,8 @@ void Pump() {
     g_last_ns = 0;
     if (!g_sensor) {
         LOGW("gyro: no gyroscope on this device");
-        // a controller's may still turn the view
+        // Preserve the user's mode; a controller gyro may still be available.
         g_no_sensor = true;
-        if (!g_pad_gyro) g_mode = kOff;
     }
 }
 
@@ -180,14 +194,53 @@ void Turn(float yaw, float pitch, uint64_t now, uint64_t& last) {
 // player: x right, y up, z back, so its pitch is about x and its yaw about y. The controller turns the view while it is
 // what is played with, the phone while the touch screen is.
 void OnEvent(const SDL_Event& e) {
+    // Queued events must respect OFF and the application's foreground state.
+    if (CurrentMode() == kOff || !host::Foreground()) return;
     bool touch = input::TouchActive();
     if (e.type == SDL_EVENT_GAMEPAD_SENSOR_UPDATE) {
-        if (e.gsensor.sensor != SDL_SENSOR_GYRO || touch) return;
-        uint64_t now = e.gsensor.sensor_timestamp ? e.gsensor.sensor_timestamp : e.gsensor.timestamp;
-        Turn(e.gsensor.data[1], e.gsensor.data[0], now, g_pad_last_ns);
+        if (e.gsensor.sensor != SDL_SENSOR_GYRO) return;
+        SDL_Gamepad* pad = SDL_GetGamepadFromID(e.gsensor.which);
+        if (!pad || !SDL_GamepadSensorEnabled(pad, SDL_SENSOR_GYRO)) return;
+
+        float yaw = e.gsensor.data[1];
+        float pitch = e.gsensor.data[0];
+        if (!std::isfinite(yaw) || !std::isfinite(pitch)) return;
+
+        uint64_t now = e.gsensor.sensor_timestamp
+                           ? e.gsensor.sensor_timestamp
+                           : e.gsensor.timestamp;
+
+        // Some reported controller sensors may produce only idle readings.
+        // Keep their integration clock current, but do not let those readings
+        // renew controller priority or reset the phone's integration clock.
+        if (std::fabs(yaw) < kDeadZone &&
+            std::fabs(pitch) < kDeadZone) {
+            g_pad_last_ns = now;
+            return;
+        }
+
+        uint64_t received = SDL_GetTicksNS();
+        bool resumed = !g_pad_received_ns || received < g_pad_received_ns ||
+                       received - g_pad_received_ns >= kPadGyroTimeoutNs;
+        g_pad_received_ns = received;
+        g_pad_gyro = true;
+        if (resumed) g_pad_last_ns = 0;
+
+        // Touch controls retain priority, but remember that the pad is reporting.
+        if (touch) {
+            g_pad_last_ns = 0;
+            return;
+        }
+        g_last_ns = 0;
+        Turn(yaw, pitch, now, g_pad_last_ns);
         return;
     }
-    if (!g_sensor || e.sensor.which != SDL_GetSensorID(g_sensor) || (g_pad_gyro && !touch)) return;
+    if (e.type != SDL_EVENT_SENSOR_UPDATE || !g_sensor ||
+        e.sensor.which != SDL_GetSensorID(g_sensor)) return;
+    if (!touch && PadGyroActive()) {
+        g_last_ns = 0;
+        return;
+    }
     uint64_t now = e.sensor.sensor_timestamp ? e.sensor.sensor_timestamp : e.sensor.timestamp;
     float wx = e.sensor.data[0], wy = e.sensor.data[1];
     SDL_Window* w = host::Window();
