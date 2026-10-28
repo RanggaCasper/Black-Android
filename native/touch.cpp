@@ -1672,10 +1672,29 @@ void PadUsed() { input::g_touch = false; }
 bool LookActive() { return !g_editing && input::Active() && input::Play() && !InMenus(); }
 
 bool Firing() {
-    std::lock_guard lock(g_lock);
-    for (size_t i = 0; i < kButtonCount; i++)
-        if (g_pressed[i] && kButtons[i].press == kAnalogRT) return true;
-    return input::Down(VK_LBUTTON);
+    {
+        std::lock_guard lock(g_lock);
+        for (size_t i = 0; i < kButtonCount; i++)
+            if (g_pressed[i] && kButtons[i].press == kAnalogRT) return true;
+    }
+    if (input::Down(VK_LBUTTON)) return true;
+
+    constexpr int kTriggerThreshold = 4096;
+    int n = 0;
+    bool firing = false;
+    if (SDL_JoystickID* ids = SDL_GetGamepads(&n)) {
+        for (int i = 0; i < n; i++) {
+            SDL_Gamepad* pad = SDL_GetGamepadFromID(ids[i]);
+            if (pad &&
+                SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) >
+                    kTriggerThreshold) {
+                firing = true;
+                break;
+            }
+        }
+        SDL_free(ids);
+    }
+    return firing;
 }
 
 // main thread, each turn of the event loop: the on-screen keyboard while a name is typed
