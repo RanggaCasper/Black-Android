@@ -92,7 +92,7 @@ jobs:
           name: Black-${{ steps.version.outputs.name }}
           path: Black-${{ steps.version.outputs.name }}.apk
           if-no-files-found: error
-
+     
       - name: Release notes
         shell: bash
         run: |
@@ -101,14 +101,6 @@ jobs:
           sha=$(sha256sum "$apk" | cut -d' ' -f1)
           sed -e "s|{{VERSION}}|$GITHUB_REF_NAME|g" -e "s|{{TAG}}|$GITHUB_REF_NAME|g" -e "s|{{APK}}|$apk|g" \
               -e "s|{{SIZE}}|$size|g" -e "s|{{SHA256}}|$sha|g" ci/release-notes.md > "$RUNNER_TEMP/release-notes.md"
-          # the commits since the previous tag, which the app's update dialog shows too
-          prev=$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_REF_NAME^" 2>/dev/null || true)
-          {
-            echo
-            echo "## What's Changed"
-            echo
-            git log --no-merges --pretty='* %s' ${prev:+"$prev.."}"$GITHUB_REF_NAME"
-          } >> "$RUNNER_TEMP/release-notes.md"
 
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -116,5 +108,5 @@ jobs:
           name: Black for Android ${{ github.ref_name }}
           body_path: ${{ runner.temp }}/release-notes.md
           files: Black-${{ steps.version.outputs.name }}.apk
-          generate_release_notes: true
+          generate_release_notes: false
           make_latest: true
