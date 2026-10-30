@@ -26,8 +26,8 @@ android {
         minSdk 29
         targetSdk 34
         // -PversionCode=<n> -PversionName=<name>: the release workflow sets them from the tag
-        versionCode project.hasProperty("versionCode") ? project.versionCode.toInteger() : 1
-        versionName project.hasProperty("versionName") ? project.versionName : "1.0"
+        versionCode project.hasProperty("versionCode") ? project.versionCode.toInteger() : 3
+        versionName project.hasProperty("versionName") ? project.versionName : "3.0"
         ndk {
             abiFilters "arm64-v8a"
         }
