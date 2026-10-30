@@ -31,12 +31,12 @@ constexpr uint32_t kPlayerZoom = 0x2A4;
 constexpr float kHeight = 1.8f;      // world units are metres: the near plane is 0.08
 constexpr float kBoxWidth = 0.45f;   // of the box's height
 constexpr float kNear = 0.08f;       // clip w nearer than this is behind the camera
-constexpr float kThickness = 1.5f;   // lines of a 480 frame
+constexpr float kThickness = 0.8f;   // lines of a 480 frame
 constexpr float kChest = 1.2f;       // above the feet, where the aimbot aims: the body, a bigger hit than the head
 constexpr float kCone = 30.0f;       // degrees from the crosshair an enemy is taken in
 constexpr float kPull = 1.0f;        // of the turn to the target, a frame
 constexpr float kDegrees = 180.0f / 3.14159265f;
-constexpr float kColour[4] = {1.0f, 0.125f, 0.125f, 1.0f};  // rgba
+constexpr float kColour[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // rgba
 
 // an enemy is drawn while its update ran this recently: none once the game pauses, no flicker between ticks
 constexpr auto kSeen = std::chrono::milliseconds(250);
