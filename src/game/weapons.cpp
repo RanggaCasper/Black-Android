@@ -100,14 +100,14 @@ uint64_t Encode(const std::string& name) {
 
 // the names the game's own text gives them, told apart by clip and ammunition; the silver ones end in 5
 const std::map<std::string, std::string> kNames = {
-    {"PST", "Pistol"},         {"PS5", "Pistol"},         {"GK1", "Glock"},        {"GK5", "Glock"},
-    {"MGN", "Magnum"},         {"MG5", "Magnum"},         {"SMG", "Uzi"},          {"SM5", "Uzi"},
-    {"SM3", "MAC-10"},         {"MC5", "MAC-10"},         {"MP1", "MP5"},          {"MP5", "MP5"},
-    {"P90", "P90"},            {"P95", "P90"},            {"AK1", "AK-47"},        {"AK5", "AK-47"},
-    {"ASR", "G36C"},           {"AS5", "G36C"},           {"M16", "M16"},          {"M45", "M16"},
-    {"BNS", "M16A2 + M203"},   {"SHG", "SPAS 12"},        {"SH5", "SPAS 12"},      {"RM1", "Remington 870"},
-    {"RM5", "Remington 870"},  {"SNR", "Walther 2000"},   {"SN5", "Walther 2000"}, {"HVY", "M249"},
-    {"HV5", "M249"},           {"RPG", "RPG"},            {"GRL", "Grenade launcher"},
+    {"PST", "Pistol"},         {"PS5", "Pistol (Silenced)"},  {"GK1", "Glock"},        {"GK5", "Glock (Silenced)"},
+    {"MGN", "Magnum"},         {"MG5", "Magnum"},             {"SMG", "Uzi"},          {"SM5", "Uzi"},
+    {"SM3", "MAC-10"},         {"MC5", "MAC-10"},             {"MP1", "MP5"},          {"MP5", "MP5 (Suppressed)"},
+    {"P90", "P90"},            {"P95", "P90"},                {"AK1", "AK-47"},        {"AK5", "AK-47"},
+    {"ASR", "G36C"},           {"AS5", "G36C"},               {"M16", "M16"},          {"M45", "M16"},
+    {"BNS", "M16A2 + M203"},   {"SHG", "SPAS 12"},            {"SH5", "SPAS 12"},      {"RM1", "Remington 870"},
+    {"RM5", "Remington 870"},  {"SNR", "Walther 2000"},       {"SN5", "Walther 2000 (Silenced)"}, {"HVY", "M249"},
+    {"HV5", "M249"},           {"RPG", "RPG"},                {"GRL", "Grenade launcher"},
 };
 
 std::string Label(const std::string& key_name) {
