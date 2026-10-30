@@ -302,6 +302,9 @@ void SwayEnd(X86Context&, uint8_t*) {
     g_sway = 0;
 }
 
+// The player's move speed eases to the stick's by at most a fixed step a frame: the step of a frame at 30
+void MoveEase(X86Context& ctx, uint8_t*) { ctx.xmm[1].f[0] *= FrameShare(); }
+
 static float Dt() { return G<float>(R32(kWorld) + kTimerDt); }
 
 // A wait set and tested once a frame lasts whole frames of the game's frame time: as many at any frame rate.
