@@ -247,25 +247,22 @@ float RenderScale(uint32_t guest_height) {
     return guest_height ? std::max(h / guest_height, 0.1f) : 1.0f;
 }
 
-// app-specific storage save
+// app-specific storage save - Dipaksa langsung ke folder publik
 std::filesystem::path ExeDir() {
     static const std::filesystem::path dir = [] {
         std::filesystem::path shared = "/storage/emulated/0/Black/SaveData";
         std::error_code ec;
+        
+        // Buat foldernya secara langsung
         std::filesystem::create_directories(shared, ec);
-        std::filesystem::path probe = shared / ".write_test";
-        {
-            std::ofstream f(probe);
-            if (f) {
-                f.close();
-                std::filesystem::remove(probe, ec);
-                return shared;
-            }
+        if (ec) {
+            LOGE("app: Gagal membuat folder SaveData: %s", ec.message().c_str());
+        } else {
+            LOGI("app: Berhasil menggunakan folder SaveData publik: %s", shared.string().c_str());
         }
-        const char* p = nullptr;
-        if (SDL_GetAndroidExternalStorageState() & SDL_ANDROID_EXTERNAL_STORAGE_WRITE) p = SDL_GetAndroidExternalStoragePath();
-        if (!p) p = SDL_GetAndroidInternalStoragePath();
-        return std::filesystem::path(p ? p : ".");
+        
+        // Langsung kembalikan path tanpa write_test dan tanpa fallback ke internal
+        return shared;
     }();
     return dir;
 }
