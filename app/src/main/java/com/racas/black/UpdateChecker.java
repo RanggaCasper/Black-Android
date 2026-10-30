@@ -20,7 +20,7 @@ import org.json.JSONObject;
 // newer than the one installed and the player has not skipped it, and from the options menu, where the answer is
 // given whatever it is.
 final class UpdateChecker {
-    static final String REPO = "RanggaCasper/Black-Android";
+    static final String REPO = "UnknuwProjects/Black-Android";
     private static final String LATEST = "https://api.github.com/repos/" + REPO + "/releases/latest";
     private static final String TAG = "BlackUpdate";
     private static final int TIMEOUT_MS = 8000;
