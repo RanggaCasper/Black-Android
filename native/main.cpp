@@ -247,21 +247,46 @@ float RenderScale(uint32_t guest_height) {
     return guest_height ? std::max(h / guest_height, 0.1f) : 1.0f;
 }
 
-// app-specific storage save - Dipaksa langsung ke folder publik
+// app-specific storage save - Dipaksa ke folder publik dengan mekanisme fallback & peringatan
 std::filesystem::path ExeDir() {
     static const std::filesystem::path dir = [] {
         std::filesystem::path shared = "/storage/emulated/0/Black/SaveData";
         std::error_code ec;
         
-        // Buat foldernya secara langsung
+        // Coba buat folder publik
         std::filesystem::create_directories(shared, ec);
-        if (ec) {
-            LOGE("app: Gagal membuat folder SaveData: %s", ec.message().c_str());
-        } else {
-            LOGI("app: Berhasil menggunakan folder SaveData publik: %s", shared.string().c_str());
+        if (!ec) {
+            // Lakukan write test sederhana untuk memastikan izin benar-benar aktif
+            std::filesystem::path test_file = shared / ".write_test";
+            std::ofstream test(test_file);
+            if (test.is_open()) {
+                test.close();
+                std::filesystem::remove(test_file, ec);
+                LOGI("app: Berhasil menggunakan folder SaveData publik: %s", shared.string().c_str());
+                return shared;
+            }
         }
         
-        // Langsung kembalikan path tanpa write_test dan tanpa fallback ke internal
+        // JIKA GAGAL (Izin belum diberikan oleh pengguna):
+        LOGW("app: Gagal mengakses folder publik /Black/SaveData. Izin akses mungkin belum aktif.");
+        
+        // Tampilkan peringatan pop-up ke layar agar pengguna tahu
+        // (Aman dipanggil karena menggunakan SDL MessageBox)
+        SDL_ShowSimpleMessageBox(
+            SDL_MESSAGEBOX_WARNING,
+            "Penyimpanan Internal Digunakan",
+            "Izin 'Akses Semua File' belum diberikan.\n\nSave data dan log akan disimpan sementara ke memori internal aplikasi, bukan ke folder /Black/SaveData.",
+            nullptr
+        );
+        
+        // Fallback otomatis ke penyimpanan internal aplikasi
+        const char* internal_path = SDL_GetAndroidInternalStoragePath();
+        if (internal_path) {
+            std::filesystem::path internal_dir = std::filesystem::path(internal_path) / "SaveData";
+            std::filesystem::create_directories(internal_dir, ec);
+            return internal_dir;
+        }
+        
         return shared;
     }();
     return dir;
