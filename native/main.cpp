@@ -247,9 +247,21 @@ float RenderScale(uint32_t guest_height) {
     return guest_height ? std::max(h / guest_height, 0.1f) : 1.0f;
 }
 
-// app-specific external storage: the player can reach the logs, saves and settings over USB
+// app-specific storage save
 std::filesystem::path ExeDir() {
     static const std::filesystem::path dir = [] {
+        std::filesystem::path shared = "/storage/emulated/0/Black/SaveData";
+        std::error_code ec;
+        std::filesystem::create_directories(shared, ec);
+        std::filesystem::path probe = shared / ".write_test";
+        {
+            std::ofstream f(probe);
+            if (f) {
+                f.close();
+                std::filesystem::remove(probe, ec);
+                return shared;
+            }
+        }
         const char* p = nullptr;
         if (SDL_GetAndroidExternalStorageState() & SDL_ANDROID_EXTERNAL_STORAGE_WRITE) p = SDL_GetAndroidExternalStoragePath();
         if (!p) p = SDL_GetAndroidInternalStoragePath();
