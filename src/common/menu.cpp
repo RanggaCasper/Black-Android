@@ -11,7 +11,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
-
+#include <jni.h>
 #include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -638,13 +638,37 @@ void StepInputRow(int id, int step, char (&text)[64]) {
             break;
         }
            case kAutoUpdate: {
-            // Menggunakan variabel statis lokal yang bersih tanpa JNI kompleks di C++
-            // Status ON/OFF dikontrol langsung di sisi UI ImGui
-            static bool auto_check = true;
-            if (step) auto_check = !auto_check;
-            std::snprintf(text, sizeof(text), "%s", OnOff(auto_check));
-            break;
-}
+    // Mendapatkan lingkungan JNI dari SDL / Native Activity
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    if (env && activity) {
+        jclass clazz = env->GetObjectClass(activity);
+        
+        // Membaca status saat ini dari SharedPreferences via Java method
+        jmethodID getMethod = env->GetStaticMethodID(clazz, "isStartupCheckEnabled", "(Landroid/content/Context;)Z");
+        bool auto_check = true;
+        if (getMethod) {
+            auto_check = env->CallStaticBooleanMethod(clazz, getMethod, activity);
+        }
+
+        // Jika tombol ditekan (step != 0), ubah statusnya (toggle)
+        if (step) {
+            auto_check = !auto_check;
+            jmethodID setMethod = env->GetStaticMethodID(clazz, "setStartupCheckEnabled", "(Landroid/content/Context;Z)V");
+            if (setMethod) {
+                env->CallStaticVoidMethod(clazz, setMethod, activity, (jboolean)auto_check);
+            }
+        }
+        
+        env->DeleteLocalRef(clazz);
+        env->DeleteLocalRef(activity);
+        
+        std::snprintf(text, sizeof(text), "%s", OnOff(auto_check));
+    } else {
+        std::snprintf(text, sizeof(text), "OFF");
+    }
+    break;
+      }
     }
 }
 
