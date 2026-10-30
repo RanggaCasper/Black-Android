@@ -642,8 +642,8 @@ void StepInputRow(int id, int step, char (&text)[64]) {
         }
            case kAutoUpdate: {
     // Mendapatkan lingkungan JNI dari SDL / Native Activity
-    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
-    jobject activity = (jobject)SDL_AndroidGetActivity();
+    JNIEnv* env = (JNIEnv*)SDL_GetAndroidJNIEnv();
+    jobject activity = (jobject)SDL_GetAndroidActivity();
     if (env && activity) {
         jclass clazz = env->GetObjectClass(activity);
         
