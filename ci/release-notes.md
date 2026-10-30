@@ -1,54 +1,84 @@
-# Black for Android {{VERSION}}
+<p align="center">
+  <img src="https://raw.githubusercontent.com/UnknuwProjects/Black-Android/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="96" alt="Black Android Logo">
+</p>
 
-> **Test Build Release**  
-> Rilis ini ditujukan khusus untuk memverifikasi alur otomatisasi *build* dan sistem rilis CI/CD. Secara fungsionalitas dan fitur, versi ini sepenuhnya identik dengan basis **v1.7.0** dari proyek upstream. Tidak ada fitur baru yang ditambahkan pada rilis ini.
+<p align="center">
+  <code><b>[ B L A C K : A N D R O I D ]</b></code><br>
+  <code>REL-{{VERSION}} // STABLE BUILD</code>
+</p>
+
+<p align="center">
+  An unofficial native Android port of the classic Xbox title <b>Black</b>,<br>
+  recompiled via <a href="https://github.com/TGP482/XboxXBE-Recomp">XboxXBE-Recomp</a> and rendered with Vulkan.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Android-10%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 10+">
+  <img src="https://img.shields.io/badge/Architecture-arm64--v8a-blue?style=flat-square" alt="arm64-v8a">
+  <img src="https://img.shields.io/badge/Graphics-Vulkan_1.1-AC162C?style=flat-square&logo=vulkan&logoColor=white" alt="Vulkan 1.1">
+  <img src="https://img.shields.io/badge/Core-SDL_3-1D4F91?style=flat-square" alt="SDL3">
+</p>
 
 ---
 
-### Informasi Penting
-* **Kebutuhan Berkas Game:** Aplikasi ini **tidak menyertakan** berkas data game apa pun. Anda wajib menyediakan berkas game *Black* (versi Xbox Original USA/Europe) yang Anda miliki secara sah.
-* **Isolasi Instalasi:** Memakai *Application ID* terpisah sehingga dapat diinstal berdampingan tanpa mengganggu atau menimpa data/pengaturan dari versi upstream.
+> [!IMPORTANT]
+> **No Game Assets Included**  
+> This release contains **no copyrighted game assets**. You must provide your own legally obtained copy of *Black* (Xbox Original USA or Europe release).
 
 ---
 
-## Unduh
+### ⚡ What's New in {{VERSION}}
+* **Refined White ESP:** Updated ESP features with clean **white color** and **thinner line widths** for sharp visual clarity without cluttering the game screen.
+* **Forced Public SaveData:** Save files, configuration settings, and logs are now redirected directly to `/storage/emulated/0/Black/SaveData/` complete with real-time **toast notifications** confirming storage operations.
 
-| Berkas | Ukuran | SHA-256 |
+---
+
+## 📦 Download
+
+| File | Size | SHA-256 |
 | :--- | :--- | :--- |
 | [`{{APK}}`](https://github.com/UnknuwProjects/Black-Android/releases/download/{{TAG}}/{{APK}}) | {{SIZE}} | `{{SHA256}}` |
 
 ---
 
-## Petunjuk Instalasi
+## 🚀 Installation & Setup
 
-1. Unduh dan pasang berkas `{{APK}}` pada perangkat Anda.
-2. Buka aplikasi dan berikan izin **Akses Semua File** (*All Files Access*) saat diminta.
-3. Salin berkas game ke jalur `/storage/emulated/0/Black` atau folder `Black` di Kartu SD Anda. Anda dapat menggunakan format ISO (`.iso`) atau folder data beserta `default.xbe`.
-4. Game akan langsung mendeteksi berkas dan siap dimainkan.
+1. Install **`{{APK}}`** on your device.
+2. Launch the app and grant **All Files Access** when prompted.
+3. Place your game files (either disc image `.iso` or `default.xbe` with its data folders) inside:
+   * `/storage/emulated/0/Black/` **OR**
+   * A `Black` folder located at the root of your SD Card.
+4. The game will automatically detect and boot the files.
 
-> **Opsi Jalur Alternatif:** Jika Anda tidak ingin memberikan izin akses semua file, tempatkan data game di direktori:  
-> `Android/data/com.black.unofficial/files/assets/`
-
----
-
-## Ringkasan Fitur (Basis v1.7.0)
-
-* **Grafis & Performa:** Dukungan render Vulkan 1.1, pengaturan resolusi 20–200%, unlocked FPS, FOV kustom, V-Sync, serta penghitung FPS.
-* **Kontrol Sentuh & Gyro:** Tata letak tombol yang dapat diubah ukurannya, sensitivitas kustom, dan pembidikan berbasis Gyroscope.
-* **Dukungan Pengontrol:** Mendukung gamepad via SDL3 (dengan rumble), keyboard, serta *captured mouse*.
-* **Lainnya:** Dukungan Bahasa Indonesia, opsi lewati intro, serta menu *cheats* bawaan.
+> [!TIP]
+> **Fallback Path:** If broad storage permissions are bypassed, data will gracefully fallback to `Android/data/com.black.unofficial/files/assets/`.
 
 ---
 
-## Persyaratan Sistem
+## ✨ Features (Base v1.7.0)
 
-* **OS:** Android 10 (API 29) atau yang lebih baru (arm64-v8a)
-* **GPU:** Mendukung Vulkan 1.1 (Adreno 6xx+, Mali-G7x+, atau Xclipse)
-* **Memori:** Minimal RAM 4 GB & ruang penyimpanan kosong 2 GB
+| Category | Specifications & Options |
+| :--- | :--- |
+| 🖥️ **Graphics** | Render resolution 20–200%, FOV 45–140°, viewmodel FOV, FMV scale, unlocked framerate, V-Sync, FPS counter, anisotropic filtering, draw distance scaling, toggleable reload blur |
+| 👆 **Touch Controls** | Fully customizable layout editor, touch sensitivity adjustment, and gyroscope aiming (device sensors, DualShock 4, or DualSense) |
+| 🎮 **Input Support** | Native SDL3 controller integration with rumble feedback, physical keyboard, and captured mouse mapping |
+| ⚙️ **General** | Multi-language support (including Indonesian), intro skipping, audio output routing, automatic update checks, and background auto-pause |
+| 💀 **Cheats** | Infinite ammo/grenades, rapid fire, zero recoil, god mode, one-hit kills, and game speed multipliers |
+
+*Note: In-game settings are handled via the game's native options menu. Use Android's back button to trigger the pause menu.*
 
 ---
 
-## Kredit & Lisensi
+## 📱 System Requirements
 
-Proyek ini dikembangkan berdasarkan *porting* Android asli oleh [RanggaCasper](https://github.com/RanggaCasper/Black-Android).  
-Bekerja menggunakan [XboxXBE-Recomp](https://github.com/TGP482/XboxXBE-Recomp) oleh TGP482, serta pustaka pendukung [SDL](https://github.com/libsdl-org/SDL), [glslang](https://github.com/KhronosGroup/glslang), [toml++](https://github.com/marzer/tomlplusplus), dan [Dear ImGui](https://github.com/ocornut/imgui).
+- **Operating System:** Android 10 or newer (64-bit arm64-v8a)
+- **Graphics GPU:** Vulkan 1.1 compatible (Adreno 6xx+, Mali-G7x+, Xclipse)
+- **Memory & Storage:** 4 GB RAM minimum \| 2 GB free internal storage space
+
+---
+
+## 🙏 Credits & Acknowledgments
+
+Port maintained by **UnknuwProjects**, based on the original Android adaptation by [RanggaCasper](https://github.com/RanggaCasper/Black-Android). Built on [XboxXBE-Recomp](https://github.com/TGP482/XboxXBE-Recomp) by **TGP482**, with [SDL](https://github.com/libsdl-org/SDL), [glslang](https://github.com/KhronosGroup/glslang), [toml++](https://github.com/marzer/tomlplusplus), and [Dear ImGui](https://github.com/ocornut/imgui).
+
+---
