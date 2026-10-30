@@ -28,21 +28,16 @@ import java.util.List;
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLControllerManager;
 
-// SDL's activity running libmain.so. The game goes in the Black folder on the phone's storage
-// (/storage/emulated/0/Black) or at the top of an SD card. Reading it needs all files access, a special access Android grants on a settings page
-// of its own, never among the app's ordinary permissions. This asks for it and says where the game goes, each time
-// the app comes back without them; the game itself waits and starts as soon as it finds the files.
-// At launch it also asks GitHub for a newer release (UpdateChecker) and tells of it once nothing else is asked.
 public class BlackActivity extends SDLActivity {
     static final String SHARED = "Black";
 
-    private AlertDialog dialog;  // the one up, at most one at a time
-    private boolean notNow;      // the player turned the access down this run
+    private AlertDialog dialog;
+    private boolean notNow;
     private boolean resumed;
-    private UpdateChecker.Release update;  // a newer release not shown yet
+    private UpdateChecker.Release update;
     private final GameImporter importer = new GameImporter(this);
-    private boolean importing;  // the file picker or the copy is up: nothing else is asked meanwhile
-    private boolean checking;   // a check asked from the menu is under way
+    private boolean importing;
+    private boolean checking;
 
     @Override
     protected String[] getLibraries() {
@@ -56,17 +51,17 @@ public class BlackActivity extends SDLActivity {
             if (v != null) v.setOnCapturedPointerListener(BlackActivity::onCapturedPointer);
         File own = getExternalFilesDir(null);
         if (own != null) new File(own, "assets").mkdirs();
-        // every launch: a newer release is shown once nothing else is asked
-        UpdateChecker.check(this, false, (r, failed) -> {
-            if (r == null) return;
-            update = r;
-            tellOfUpdate();
-        });
+        
+        // Hanya cek update saat startup jika diaktifkan di menu pengaturan
+        if (isStartupCheckEnabled(this)) {
+            UpdateChecker.check(this, false, (r, failed) -> {
+                if (r == null) return;
+                update = r;
+                tellOfUpdate();
+            });
+        }
     }
 
-    // A controller some phones' game services pass on as a virtual device (MIUI's took a DualShock 4 on a Redmi Note
-    // 8 Pro): SDL sees no controller in it and drops its input. Its buttons and sticks go to the game as port 0's
-    // here (native/input.cpp); a controller SDL has goes its own way as before.
     private static native void nativeLooseKey(int keyCode, boolean down);
     private static native void nativeLooseAxes(float lx, float ly, float rx, float ry, float lt, float rt, float hx,
                                                float hy);
@@ -91,7 +86,6 @@ public class BlackActivity extends SDLActivity {
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent e) {
         if (loose(e, InputDevice.SOURCE_JOYSTICK) && e.getActionMasked() == MotionEvent.ACTION_MOVE) {
-            // the right stick on Z and RZ, the triggers on LTRIGGER and RTRIGGER or BRAKE and GAS, as Android has them
             nativeLooseAxes(e.getAxisValue(MotionEvent.AXIS_X), e.getAxisValue(MotionEvent.AXIS_Y),
                     e.getAxisValue(MotionEvent.AXIS_Z), e.getAxisValue(MotionEvent.AXIS_RZ),
                     Math.max(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE)),
@@ -102,9 +96,6 @@ public class BlackActivity extends SDLActivity {
         return super.dispatchGenericMotionEvent(e);
     }
 
-    // The mouse while the game holds it (SDL's relative mode, Android's pointer capture). SDL's own handler passes on
-    // only moves with no button held and the wheel: clicks and the moves while firing were lost. Each sample of a
-    // batch is a move of its own, as SDL's C side takes them.
     private static boolean onCapturedPointer(View view, MotionEvent e) {
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_MOVE:
@@ -124,12 +115,19 @@ public class BlackActivity extends SDLActivity {
                         e.getAxisValue(MotionEvent.AXIS_VSCROLL), false);
                 return true;
             default:
-                // the down and up a press brings with it: the button events above carry it
                 return true;
         }
     }
 
-    // CHECK FOR UPDATES in the options menu, from the game's thread: the answer always shows, up to date or offline
+    // Helper methods untuk Startup Update Check (diletakkan di luar method lain secara benar)
+    public static boolean isStartupCheckEnabled(android.content.Context context) {
+        return context.getSharedPreferences("updates", MODE_PRIVATE).getBoolean("startup_check", true);
+    }
+
+    public static void setStartupCheckEnabled(android.content.Context context, boolean enabled) {
+        context.getSharedPreferences("updates", MODE_PRIVATE).edit().putBoolean("startup_check", enabled).apply();
+    }
+
     public void checkForUpdates() {
         runOnUiThread(() -> {
             if (checking) return;
@@ -168,19 +166,16 @@ public class BlackActivity extends SDLActivity {
         super.onPause();
     }
 
-    // SDL's older immersive flags don't always come back after a dialog (MIUI on Android 11 kept the status bar):
-    // the bars are hidden again each time the game has the focus, a swipe shows them for a moment
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) hideSystemBars();
-        else if (!mBrokenLibraries) nativeLooseRelease();  // its ups go elsewhere while the game is not in front
+        else if (!mBrokenLibraries) nativeLooseRelease();
     }
 
     @SuppressWarnings("deprecation")
     private void hideSystemBars() {
         if (Build.VERSION.SDK_INT < 30) {
-            // Android 10: the older immersive flags
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                     | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                     | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
@@ -193,11 +188,9 @@ public class BlackActivity extends SDLActivity {
         c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
     }
 
-    // Android 11 on has all files access, a page of its own in the settings; Android 10 the storage permission, with
-    // the legacy storage the manifest asks for
     private static final boolean ALL_FILES_ACCESS = Build.VERSION.SDK_INT >= 30;
     private static final int STORAGE_REQUEST = 0x426C;
-    private boolean storageAsked;  // the permission was asked for this run
+    private boolean storageAsked;
 
     private boolean hasStorageAccess() {
         if (ALL_FILES_ACCESS) return Environment.isExternalStorageManager();
@@ -221,11 +214,9 @@ public class BlackActivity extends SDLActivity {
         tellWhereTheGameGoes();
     }
 
-    // the Black folder on each SD card or USB stick mounted, as native/game_files.cpp looks in them
     private List<File> cardFolders() {
         List<File> out = new ArrayList<>();
         if (!ALL_FILES_ACCESS) {
-            // Android 10: each card's root above the app's own folder on it, <root>/Android/data/<package>/files
             File[] own = getExternalFilesDirs(null);
             for (int i = 1; i < own.length; i++) {
                 File root = own[i];
@@ -244,8 +235,6 @@ public class BlackActivity extends SDLActivity {
         return out;
     }
 
-    // the same folders for native/game_files.cpp, from the game's thread: some phones (a Sony on Android 11) don't let
-    // the app list /storage, though each card's folder opens
     public String[] cardFolderPaths() {
         List<File> cards = cardFolders();
         String[] out = new String[cards.size()];
@@ -253,7 +242,6 @@ public class BlackActivity extends SDLActivity {
         return out;
     }
 
-    // the newer release, once the app is in front with no other dialog up; shown once a run
     private void tellOfUpdate() {
         if (update == null || importing || !resumed || isFinishing() || (dialog != null && dialog.isShowing())) return;
         UpdateChecker.Release r = update;
@@ -269,16 +257,13 @@ public class BlackActivity extends SDLActivity {
         if (!r.changes.isEmpty()) msg.append("\n\nWhat's new:\n").append(r.changes);
         msg.append("\n\nInstall it over this one: your settings and saves stay.");
 
-        // Membuat Checkbox secara dinamis untuk "Don't ask again"
         android.widget.CheckBox cbSkip = new android.widget.CheckBox(this);
         cbSkip.setText("Don't ask again for this version");
         cbSkip.setPadding(32, 16, 32, 16);
 
-        // Bungkus pesan dan checkbox ke dalam satu layout vertikal
         android.widget.LinearLayout container = new android.widget.LinearLayout(this);
         container.setOrientation(android.widget.LinearLayout.VERTICAL);
         
-        // Buat TextView untuk pesan dialog agar bisa dimasukkan ke container bersama checkbox
         android.widget.TextView tvMessage = new android.widget.TextView(this);
         tvMessage.setText(msg.toString());
         tvMessage.setPadding(48, 32, 48, 16);
@@ -289,16 +274,14 @@ public class BlackActivity extends SDLActivity {
 
         dialog = new AlertDialog.Builder(this)
                 .setTitle("Update available")
-                .setView(container) // Menggunakan custom view yang rapi
+                .setView(container)
                 .setPositiveButton("Download", (d, w) -> {
-                    // Jika dicentang, simpan status skip
                     if (cbSkip.isChecked()) {
                         UpdateChecker.skip(this, r.tag);
                     }
                     open(r.apk != null ? r.apk : r.page);
                 })
                 .setNegativeButton("No", (d, w) -> {
-                    // Jika menolak tapi mencentang "Don't ask again"
                     if (cbSkip.isChecked()) {
                         UpdateChecker.skip(this, r.tag);
                     }
@@ -309,12 +292,9 @@ public class BlackActivity extends SDLActivity {
     private void open(String url) {
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-        } catch (ActivityNotFoundException e) {
-            // no browser: nothing to open it with
-        }
+        } catch (ActivityNotFoundException e) {}
     }
 
-    // default.xbe or a disc image in the folder
     private static boolean hasGame(File dir) {
         if (new File(dir, "default.xbe").exists()) return true;
         File[] files = dir.listFiles();
@@ -355,8 +335,6 @@ public class BlackActivity extends SDLActivity {
                 .show();
     }
 
-    // the disc image the player picks, copied where the game looks: the Black folder with all files access, else the
-    // app's own assets folder, which needs none
     private void startImport() {
         importing = importer.pick();
     }
@@ -369,7 +347,7 @@ public class BlackActivity extends SDLActivity {
         }
         Uri uri = resultCode == RESULT_OK && data != null ? data.getData() : null;
         if (uri == null) {
-            importing = false;  // the picker was closed: onResume asks again
+            importing = false;
             return;
         }
         File dir = hasStorageAccess()
@@ -382,8 +360,6 @@ public class BlackActivity extends SDLActivity {
         });
     }
 
-    // the app's own page of the access, or the list of every app's where a phone has no such page. Android 10 asks
-    // for the storage permission, or opens the app's details once the player has turned it down for good
     private void openAccessSettings() {
         if (!ALL_FILES_ACCESS) {
             boolean ask = !storageAsked || shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE);
