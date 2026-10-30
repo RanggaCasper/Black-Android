@@ -28,6 +28,8 @@
 ---
 
 ### ⚡ What's New in {{VERSION}}
+* **Expanded Silenced Weapon Variants:** Added dedicated cheat options for suppressed weapon variants in the weapon swap menu—including **Pistol (Silenced)**, **Glock (Silenced)**, **MP5 (Suppressed)**, and **Walther 2000 (Silenced)**—allowing seamless switching to stealth variants with fully functional first-person banks and world models.
+* **Refined Update Center & Startup Control:** Relocated update options into the general settings category with a new persistent **Startup Update Check** (On/Off) toggle managed via SharedPreferences and JNI, alongside manual update triggers.
 * **Refined White ESP:** Updated ESP features with clean **white color** and **thinner line widths** for sharp visual clarity without cluttering the game screen.
 * **Forced Public SaveData:** Save files, configuration settings, and logs are now redirected directly to `/storage/emulated/0/Black/SaveData/` complete with real-time **toast notifications** confirming storage operations.
 
@@ -62,8 +64,8 @@
 | 🖥️ **Graphics** | Render resolution 20–200%, FOV 45–140°, viewmodel FOV, FMV scale, unlocked framerate, V-Sync, FPS counter, anisotropic filtering, draw distance scaling, toggleable reload blur |
 | 👆 **Touch Controls** | Fully customizable layout editor, touch sensitivity adjustment, and gyroscope aiming (device sensors, DualShock 4, or DualSense) |
 | 🎮 **Input Support** | Native SDL3 controller integration with rumble feedback, physical keyboard, and captured mouse mapping |
-| ⚙️ **General** | Multi-language support (including Indonesian), intro skipping, audio output routing, automatic update checks, and background auto-pause |
-| 💀 **Cheats** | Infinite ammo/grenades, rapid fire, zero recoil, god mode, one-hit kills, and game speed multipliers |
+| ⚙️ **General** | Multi-language support (including Indonesian), intro skipping, audio output routing, general settings update hub, startup update check control, and background auto-pause |
+| 💀 **Cheats** | Infinite ammo/grenades, rapid fire, zero recoil, god mode, one-hit kills, game speed multipliers, and native silenced weapon variants (Pistol, Glock, MP5, Walther 2000) |
 
 *Note: In-game settings are handled via the game's native options menu. Use Android's back button to trigger the pause menu.*
 
