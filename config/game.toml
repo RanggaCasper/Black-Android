@@ -575,3 +575,8 @@ after = true
 at = 0x1F813B
 call = "GameLanguage"
 after = true
+
+# src/game/hooks.cpp, the 0.8 step of the move speed
+[[hook]]
+at = 0x1CC672
+call = "MoveEase"
