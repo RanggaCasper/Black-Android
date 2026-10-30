@@ -637,10 +637,29 @@ void StepInputRow(int id, int step, char (&text)[64]) {
             std::snprintf(text, sizeof(text), format, kLanguageNames[i]);
             break;
         }
-         case kAutoUpdate: {
-            // Status toggle untuk pengecekan otomatis saat startup (Default: ON)
-            static bool auto_check = true;
-            if (step) auto_check = !auto_check;
+                  case kAutoUpdate: {
+            JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+            jobject activity = (jobject)SDL_AndroidGetActivity();
+            bool auto_check = true;
+
+            if (env && activity) {
+                jclass clazz = env->GetObjectClass(activity);
+                jmethodID getMethod = env->GetMethodID(clazz, "isStartupCheckEnabled", "(Landroid/content/Context;)Z");
+                if (getMethod) {
+                    auto_check = env->CallBooleanMethod(activity, getMethod, activity);
+                }
+                
+                if (step) {
+                    auto_check = !auto_check;
+                    jmethodID setMethod = env->GetMethodID(clazz, "setStartupCheckEnabled", "(Landroid/content/Context;Z)V");
+                    if (setMethod) {
+                        env->CallVoidMethod(activity, setMethod, activity, (jboolean)auto_check);
+                    }
+                }
+                env->DeleteLocalRef(clazz);
+                env->DeleteLocalRef(activity);
+            }
+            
             std::snprintf(text, sizeof(text), "%s", OnOff(auto_check));
             break;
         }
