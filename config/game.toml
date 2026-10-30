@@ -387,6 +387,11 @@ at = 0x79327
 call = "JointTurnBack"
 
 [[hook]]
+at = 0x14B4F5
+call = "SoundCountdownTick"
+on_false = 0x14B559
+
+[[hook]]
 at = 0x169160
 call = "ShardTick"
 on_false = 0x169167
