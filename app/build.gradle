@@ -17,7 +17,7 @@ tasks.register("fetchSDL") {
 preBuild.dependsOn "fetchSDL"
 
 android {
-    namespace "com.black.unofficial"
+    namespace "com.racas.black"
     compileSdk 34
     ndkVersion "28.2.13676358"
 
