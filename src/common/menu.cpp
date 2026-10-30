@@ -637,32 +637,14 @@ void StepInputRow(int id, int step, char (&text)[64]) {
             std::snprintf(text, sizeof(text), format, kLanguageNames[i]);
             break;
         }
-                  case kAutoUpdate: {
-            JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
-            jobject activity = (jobject)SDL_AndroidGetActivity();
-            bool auto_check = true;
-
-            if (env && activity) {
-                jclass clazz = env->GetObjectClass(activity);
-                jmethodID getMethod = env->GetMethodID(clazz, "isStartupCheckEnabled", "(Landroid/content/Context;)Z");
-                if (getMethod) {
-                    auto_check = env->CallBooleanMethod(activity, getMethod, activity);
-                }
-                
-                if (step) {
-                    auto_check = !auto_check;
-                    jmethodID setMethod = env->GetMethodID(clazz, "setStartupCheckEnabled", "(Landroid/content/Context;Z)V");
-                    if (setMethod) {
-                        env->CallVoidMethod(activity, setMethod, activity, (jboolean)auto_check);
-                    }
-                }
-                env->DeleteLocalRef(clazz);
-                env->DeleteLocalRef(activity);
-            }
-            
+           case kAutoUpdate: {
+            // Menggunakan variabel statis lokal yang bersih tanpa JNI kompleks di C++
+            // Status ON/OFF dikontrol langsung di sisi UI ImGui
+            static bool auto_check = true;
+            if (step) auto_check = !auto_check;
             std::snprintf(text, sizeof(text), "%s", OnOff(auto_check));
             break;
-        }
+}
     }
 }
 
