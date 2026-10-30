@@ -510,6 +510,17 @@ void RagdollLookAhead(X86Context& ctx, uint8_t*) {
     if (float share = FrameShare(); share > 0) ctx.xmm[0].f[0] /= share;
 }
 
+// A joint past its limit is pushed back within one step and keeps that push as speed: back within a frame of
+// the game's frame rate instead. xmm6 the room to the upper or lower limit, xmm0 a locked axis' error
+void JointUpperRoom(X86Context& ctx, uint8_t*) {
+    if (ctx.xmm[6].f[0] < 0) ctx.xmm[6].f[0] *= FrameShare();
+}
+void JointLowerRoom(X86Context& ctx, uint8_t*) {
+    if (ctx.xmm[6].f[0] > 0) ctx.xmm[6].f[0] *= FrameShare();
+}
+void JointLockedError(X86Context& ctx, uint8_t*) { ctx.xmm[0].f[0] *= FrameShare(); 
+}
+
 // A joint's error, its anchors apart or a turn past its limit or lock, is put right within one step and that push
 // stays on as speed: put right within a frame of the game's frame rate instead.
 // xmm1 the gap of the anchors after the step, xmm2 the part of it the bodies' own motion makes
