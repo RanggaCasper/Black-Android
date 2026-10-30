@@ -248,7 +248,7 @@ enum RowId { kRenderResolution, kMaxFps, kVsync, kFpsCounter, kAniso, kReloadBlu
              kCheckUpdates, kTouchSensitivity, kLeftDeadzone, kRightDeadzone, kLeftSensitivity, kRightSensitivity,
              kScreenFilter, kGyroInvertX, kGyroInvertY, kUnlockLevels, kUnlockBlackOps, kTouchSkin, kCredit, kBloom,
              kFog, kAntiAliasing, kHdr, kEsp, kAimbot, kTouchStick, kDynamicRes, kDynamicTarget, kDynamicMin,
-             kDynamicMax, kDynamicHold };
+             kDynamicMax, kDynamicHold, kAutoUpdate };
 
 using rows::Kind;
 using rows::Row;
@@ -311,7 +311,9 @@ constexpr Row kGeneralRows[] = {
     {Kind::Value, kAudioOutput, "AUDIO OUTPUT"},
     {Kind::Heading, -1, "UPDATES"},
     {Kind::Value, kCheckUpdates, "CHECK FOR UPDATES"},
+    {Kind::Value, kAutoUpdate, "STARTUP UPDATE CHECK"},
 };
+
 
 // a page of its own, apart from the recomp's settings
 constexpr Row kCheatRows[] = {
@@ -633,6 +635,13 @@ void StepInputRow(int id, int step, char (&text)[64]) {
             }
             const char* format = o.language == game::BootLanguage() ? "%s" : "%s (RESTART)";
             std::snprintf(text, sizeof(text), format, kLanguageNames[i]);
+            break;
+        }
+         case kAutoUpdate: {
+            // Status toggle untuk pengecekan otomatis saat startup (Default: ON)
+            static bool auto_check = true;
+            if (step) auto_check = !auto_check;
+            std::snprintf(text, sizeof(text), "%s", OnOff(auto_check));
             break;
         }
     }
