@@ -261,20 +261,48 @@ public class BlackActivity extends SDLActivity {
         String installed = "";
         try {
             installed = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-        } catch (Exception e) {
-            // only for the message
-        }
+        } catch (Exception e) {}
+
         StringBuilder msg = new StringBuilder(r.name + " is available");
         if (!installed.isEmpty()) msg.append(" (you have ").append(installed).append(")");
         msg.append('.');
         if (!r.changes.isEmpty()) msg.append("\n\nWhat's new:\n").append(r.changes);
         msg.append("\n\nInstall it over this one: your settings and saves stay.");
+
+        // Membuat Checkbox secara dinamis untuk "Don't ask again"
+        android.widget.CheckBox cbSkip = new android.widget.CheckBox(this);
+        cbSkip.setText("Don't ask again for this version");
+        cbSkip.setPadding(32, 16, 32, 16);
+
+        // Bungkus pesan dan checkbox ke dalam satu layout vertikal
+        android.widget.LinearLayout container = new android.widget.LinearLayout(this);
+        container.setOrientation(android.widget.LinearLayout.VERTICAL);
+        
+        // Buat TextView untuk pesan dialog agar bisa dimasukkan ke container bersama checkbox
+        android.widget.TextView tvMessage = new android.widget.TextView(this);
+        tvMessage.setText(msg.toString());
+        tvMessage.setPadding(48, 32, 48, 16);
+        tvMessage.setTextSize(14);
+        
+        container.addView(tvMessage);
+        container.addView(cbSkip);
+
         dialog = new AlertDialog.Builder(this)
                 .setTitle("Update available")
-                .setMessage(msg)
-                .setPositiveButton("Download", (d, w) -> open(r.apk != null ? r.apk : r.page))
-                .setNeutralButton("Skip this version", (d, w) -> UpdateChecker.skip(this, r.tag))
-                .setNegativeButton("Later", null)
+                .setView(container) // Menggunakan custom view yang rapi
+                .setPositiveButton("Download", (d, w) -> {
+                    // Jika dicentang, simpan status skip
+                    if (cbSkip.isChecked()) {
+                        UpdateChecker.skip(this, r.tag);
+                    }
+                    open(r.apk != null ? r.apk : r.page);
+                })
+                .setNegativeButton("No", (d, w) -> {
+                    // Jika menolak tapi mencentang "Don't ask again"
+                    if (cbSkip.isChecked()) {
+                        UpdateChecker.skip(this, r.tag);
+                    }
+                })
                 .show();
     }
 
