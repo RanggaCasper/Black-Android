@@ -12,9 +12,12 @@
 #include <utility>
 #include <vector>
 #include <jni.h>
+
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_system.h>
 #include <imgui.h>
 #include <imgui_internal.h>
+
 
 #include "app/app.h"
 #include "audio/output.h"
