@@ -1,4 +1,4 @@
-plugins {
+iplugins {
     id "com.android.application"
 }
 
@@ -17,12 +17,12 @@ tasks.register("fetchSDL") {
 preBuild.dependsOn "fetchSDL"
 
 android {
-    namespace "com.racas.black"
+    namespace "com.black.unofficial"
     compileSdk 34
     ndkVersion "28.2.13676358"
 
     defaultConfig {
-        applicationId "com.racas.black"
+        applicationId "com.black.unofficial"
         minSdk 29
         targetSdk 34
         // -PversionCode=<n> -PversionName=<name>: the release workflow sets them from the tag
