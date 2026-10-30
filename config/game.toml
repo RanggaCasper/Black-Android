@@ -379,6 +379,18 @@ at = 0xE056D
 call = "RagdollLookAhead"
 
 [[hook]]
+at = 0x792B4
+call = "JointUpperRoom"
+
+[[hook]]
+at = 0x792C8
+call = "JointLowerRoom"
+
+[[hook]]
+at = 0x79304
+call = "JointLockedError"
+
+[[hook]]
 at = 0x78B0F
 call = "JointAnchorGap"
 
