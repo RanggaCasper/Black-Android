@@ -1,4 +1,4 @@
-package com.racas.black;
+package com.black.unofficial;
 
 import android.content.Context;
 import android.content.SharedPreferences;
