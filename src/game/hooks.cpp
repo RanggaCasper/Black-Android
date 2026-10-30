@@ -547,6 +547,16 @@ X86_FUNC(sub_001690D0) {
 }
 bool ShardTick(X86Context&, uint8_t*) { return g_shard_tick; }
 
+// The sound manager counts its glass shard sound slots (0x2AB27C) and four timers down once a call, made for 30 calls
+// a second: they count once a game frame, or shard sounds pile up at high frame rates
+bool SoundCountdownTick(X86Context&, uint8_t*) {
+    static float ticks;
+    ticks += FrameShare();
+    if (ticks < 1) return false;
+    ticks -= 1;
+    return true;
+}
+
 // xmm1 the gain of a shard's turn a frame
 void ShardSpinGain(X86Context& ctx, uint8_t*) { ctx.xmm[1].f[0] *= FrameShare(); }
 
