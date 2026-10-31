@@ -888,8 +888,10 @@ void DrawWeapons() {
         if (c.held) ImGui::PopStyleColor();
         ImGui::PopID();
     }
-    Section("AMMUNITION");
+    Section("SUPPLIES");
     if (ImGui::Button(Ui("FILL AMMUNITION").c_str(), ImVec2(w, 0))) weapons::FillAmmo();
+    ImGui::SameLine();
+    if (ImGui::Button(Ui("FILL MEDKITS").c_str(), ImVec2(w, 0))) weapons::FillMedkits();
     if (!v.status.empty()) {
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Text, kDim);
