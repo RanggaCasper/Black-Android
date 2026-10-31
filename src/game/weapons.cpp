@@ -400,9 +400,8 @@ bool EnsureWorldModel(X86Context& ctx, const std::string& weapon_name, bool silv
 // A dropped weapon becomes a pickup with its world model, a null one crashes: it is loaded now if it can be, else
 // the drop makes none, as when the game's pickups are all in use. pm the pickup manager: +0x5844 the pickup table
 // (count byte, +8 entries of 0x18: weapon key, model key, weapon type byte at +0x10), +0x5800 its models found
-constexpr uint32_t kPickupTable = 0x5844;
 constexpr uint32_t kPickupModels = 0x5800;
-constexpr uint32_t kPickupSize = 0x18;
+constexpr uint32_t kDropEntrySize = 0x18;
 bool DropHasModel(X86Context& ctx, uint32_t pm, uint8_t type) {
     uint32_t table = pm ? R32(pm + kPickupTable) : 0;
     if (!table) return true;
@@ -410,11 +409,11 @@ bool DropHasModel(X86Context& ctx, uint32_t pm, uint8_t type) {
     int count = G<uint8_t>(table);
     int found = -1;
     for (int i = 0; i < count && found < 0; i++)
-        if (G<uint8_t>(entries + uint32_t(i) * kPickupSize + 0x10) == type) found = i;
+        if (G<uint8_t>(entries + uint32_t(i) * kDropEntrySize + 0x10) == type) found = i;
     if (found < 0) return false;
     uint32_t models = R32(pm + kPickupModels);
     if (models && R32(models + uint32_t(found) * 4)) return true;
-    uint32_t e = entries + uint32_t(found) * kPickupSize;
+    uint32_t e = entries + uint32_t(found) * kDropEntrySize;
     uint64_t key = R32(e + 8) | uint64_t(R32(e + 12)) << 32;
     uint32_t world = R32(kWorld);
     return EnsureModel(ctx, key, world && G<uint8_t>(world + kWorldSilver) != 0);
