@@ -16,8 +16,10 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -63,12 +65,16 @@ constexpr uint32_t kInvSlots = 0x20;     // the weapons, one a slot
 constexpr uint32_t kInvHeld = 0x24;      // the weapon in hand
 constexpr uint32_t kInvSwitchTo = 0x28;  // the weapon a switch brings out
 constexpr uint32_t kInvRequest = 0x38;   // 2 asks to switch to the other slot, as the d-pad does
+constexpr uint32_t kInvBusy = 0xB4;       // 0x13 while the suppressor animation runs
 constexpr uint32_t kInvSlotCount = 0x42;  // byte
 constexpr uint32_t kInvSlotHeld = 0x43;   // byte
+constexpr bool kProbe = false;  // true: the diagnostic probes write weapons_diag.log
 constexpr int kAmmoTypes = 10;
 constexpr uint32_t kAmmoMax = 999;
 // weapon and its data
 constexpr uint32_t kWeaponType = 0;  // byte: index in the table
+constexpr uint32_t kWeaponAnim = 0xD8;        // the first person animation id, 0 when idle (0x19 attach, 0x1A detach)
+constexpr uint32_t kWeaponSuppressed = 0x108;  // 1 while the suppressor is on (found by diffing snapshots)
 constexpr uint32_t kWeaponData = 0xEC;
 constexpr uint32_t kWeaponMagazine = 0xF4;  // the main fire's magazine, +0xF8 the alternate fire's
 constexpr uint32_t kMagazineData = 8;
@@ -119,34 +125,16 @@ std::string Label(const std::string& key_name) {
     return it == kNames.end() ? code : it->second + " (" + code + ")";
 }
 
-// ---- automatic suppressor: the game keeps a suppressed gun as its own weapon type, so the plain one is swapped for it ----
-// base code -> suppressed twin code (names as in the table, without the "BG1_" prefix). Check the "weapons: table" lines
-// in the log and fix this list to what the table really holds.
-const std::map<std::string, std::string> kSuppressed = {
-    {"PST", "PS5"}, {"GK1", "GK5"}, {"MP1", "MP5"}, {"SNR", "SN5"},
-};
+// ---- automatic suppressor: weapon+0x108 is 1 while the suppressor is on ----------------------------------------
+// Weapons whose table code is listed get it set once when they are in hand and idle. The default list is what the
+// logs proved (Glock, AK-47); suppressor_codes.txt beside the log (codes separated by spaces, e.g. "GK1 AK1 MP1")
+// replaces it, to try other weapons.
 std::atomic<bool> g_auto_suppressor{true};
+std::set<std::string> g_supp_codes;
+std::map<uint32_t, int> g_applied;  // weapon object -> type it was handled as
 
 std::string CodeOf(const std::string& key_name) {
     return key_name.size() > 4 && key_name.compare(0, 4, "BG1_") == 0 ? key_name.substr(4) : key_name;
-}
-
-// the type of the suppressed twin of `type` in this manager's table, or `type` itself when it has none
-int SuppressedTwin(uint32_t manager, int type) {
-    uint32_t table = manager ? R32(manager) : 0;
-    if (!table || type < 0) return type;
-    int count = G<uint8_t>(table + kTableCount);
-    uint32_t entries = R32(table + kTableEntries);
-    if (!entries || type >= count || count > 64) return type;
-    auto key = [&](int t) {
-        uint32_t e = entries + uint32_t(t) * kEntrySize;
-        return R32(e) | uint64_t(R32(e + 4)) << 32;
-    };
-    auto it = kSuppressed.find(CodeOf(Decode(key(type))));
-    if (it == kSuppressed.end()) return type;
-    for (int t = 0; t < count; t++)
-        if (CodeOf(Decode(key(t))) == it->second) return t;
-    return type;
 }
 
 // black.log takes none of the LOGI lines, so the weapons' own diagnostics also go to a file beside it
@@ -459,7 +447,6 @@ void DoGive(X86Context& ctx, int type) {
     Level l;
     if (!ReadLevel(l)) return SetStatus("Only during a level");
     if (type < 0 || type >= l.count) return;
-    if (g_auto_suppressor) type = SuppressedTwin(l.manager, type);
     std::string name = Decode(EntryKey(l, type));
     if (G<uint8_t>(l.inventory + kInvSlotCount) < 2) return SetStatus("The player has a single weapon slot here");
     if (R32(l.inventory + kInvRequest) || R32(l.inventory + kInvHeld) != R32(l.inventory + kInvSwitchTo))
@@ -544,31 +531,6 @@ struct Region {
     }
 };
 
-void DumpRegion(int n, const char* name, uint32_t at, uint32_t size) {
-    for (uint32_t o = 0; o < size; o += 32) {
-        char line[256];
-        size_t len = size_t(std::snprintf(line, sizeof(line), "SNAP%d %s+%03X:", n, name, unsigned(o)));
-        for (uint32_t i = 0; i < 8 && o + i * 4 < size; i++)
-            len += size_t(std::snprintf(line + len, sizeof(line) - len, " %08X", unsigned(R32(at + o + i * 4))));
-        DiagLog("%s", line);
-    }
-}
-
-void Snapshot(const Level& l, uint32_t w) {
-    static int n;
-    static double next = 0;
-    double t = Seconds();
-    if (t < next) return;
-    next = t + 10;
-    n++;
-    DiagLog("t=%.1f SNAP%d begin", t, n);
-    DumpRegion(n, "weapon", w, 0x110);
-    if (uint32_t d = R32(w + kWeaponData)) DumpRegion(n, "data", d, 0x100);
-    if (uint32_t m = R32(w + kWeaponMagazine)) DumpRegion(n, "mag", m, 0x80);
-    DumpRegion(n, "inv", l.inventory, 0x200);
-    DumpRegion(n, "player", l.player, 0x300);
-}
-
 void SuppressorProbe() {
     static uint32_t last_weapon, last_data;
     static int last_type = -1, last_mark = -1;
@@ -606,7 +568,6 @@ void SuppressorProbe() {
     if (d) data.Scan("data", d, 0x100);
     if (uint32_t mag = R32(w + kWeaponMagazine)) magazine.Scan("magazine", mag, 0x80);
     inventory.Scan("inventory", l.inventory, 0x100);
-    Snapshot(l, w);
 }
 
 // ---- temporary: what the pickup of a suppressor changes ---------------------------------------------------------
@@ -680,13 +641,49 @@ void PickupWatch() {
 void PickupEvent(uint32_t category, uint32_t type, uint32_t ret) {
     Level l;
     if (!ReadLevel(l)) return;
-    if (category != 0)
+    if (kProbe && category != 0)
         DiagLog("t=%.1f pickup message: kind %u, type %u, caller %08X", Seconds(), category, type, unsigned(ret));
     Watch& w = g_watch;
     if (category != 4 || w.addr.empty() || w.hist.empty()) return;
     w.event = Seconds();
     w.before = w.hist.front();
     for (size_t i = 0; i < w.addr.size(); i++) w.quiet[i] = w.event - w.changed[i] > 2.0;
+}
+
+void LoadSuppressorCodes() {
+    static bool done;
+    if (done) return;
+    done = true;
+    g_supp_codes = {"GK1", "AK1"};
+    std::ifstream f("/storage/emulated/0/Black/SaveData/suppressor_codes.txt");
+    std::set<std::string> codes;
+    std::string tok;
+    while (f >> tok) {
+        for (char& c : tok) c = char(std::toupper(uint8_t(c)));
+        codes.insert(CodeOf(tok));
+    }
+    if (!codes.empty()) g_supp_codes = codes;
+    std::string all;
+    for (const std::string& c : g_supp_codes) all += c + " ";
+    DiagLog("weapons: auto suppressor for %s", all.c_str());
+}
+
+// the weapon in hand, once it is idle: its suppressor goes on, if its type is on the list and it is not on already
+void AutoSuppressor(const Level& l) {
+    if (!g_auto_suppressor) return;
+    LoadSuppressorCodes();
+    uint32_t w = R32(l.inventory + kInvHeld);
+    if (!w || R32(l.inventory + kInvRequest) || w != R32(l.inventory + kInvSwitchTo)) return;  // a switch is on
+    if (R32(w + kWeaponAnim) || R32(l.inventory + kInvBusy)) return;                            // an animation runs
+    int type = G<uint8_t>(w + kWeaponType);
+    auto it = g_applied.find(w);
+    if (it != g_applied.end() && it->second == type) return;
+    g_applied[w] = type;
+    if (type >= l.count) return;
+    std::string code = CodeOf(Decode(EntryKey(l, type)));
+    if (!g_supp_codes.count(code) || R32(w + kWeaponSuppressed)) return;
+    W32(w + kWeaponSuppressed, 1);
+    DiagLog("weapons: suppressor on for %s (weapon %08X)", code.c_str(), unsigned(w));
 }
 
 // logs the level loader's step whenever it changes: shows that the tick runs and why a level is not read
@@ -733,8 +730,13 @@ void WeaponsTick(X86Context& ctx) {
     if (g_fill.exchange(false)) DoFill();
     if (++tick % 10 == 0) Refresh();
     Heartbeat();
-    PickupWatch();
-    SuppressorProbe();
+    Level l;
+    if (ReadLevel(l)) AutoSuppressor(l);
+    else g_applied.clear();
+    if (kProbe) {
+        PickupWatch();
+        SuppressorProbe();
+    }
 }
 
 // the game's file opening: a first person bank the level lacks comes from another level's folder
@@ -784,20 +786,12 @@ X86_FUNC(sub_001D3790) {
     __imp__sub_001D3790(ctx, base);
 }
 
-// A weapon created for the player (a pickup, the level's loadout, the panel): the suppressed twin when there is one.
-// edi the weapon manager; (owner, type, 0) on the stack.
+// A weapon created (a pickup, the level's loadout, the panel): a new object is handled afresh by AutoSuppressor.
+// edi the weapon manager; (owner, type, 0) on the stack; eax the weapon after.
 X86_EXTERN_FUNC(__imp__sub_001CEE10);
 X86_FUNC(sub_001CEE10) {
-    uint32_t world = R32(kWorld);
-    if (g_auto_suppressor && world && R32(ctx.esp + 4) == world + kWorldPlayer) {
-        uint32_t arg = R32(ctx.esp + 8);
-        int twin = SuppressedTwin(ctx.edi, int(arg & 0xFF));
-        if (twin != int(arg & 0xFF)) {
-            DiagLog("weapons: type %u becomes its suppressed twin %d", arg & 0xFF, twin);
-            W32(ctx.esp + 8, (arg & ~0xFFu) | uint32_t(twin));
-        }
-    }
     __imp__sub_001CEE10(ctx, base);
+    if (ctx.eax) g_applied.erase(ctx.eax);
 }
 
 // the game's pickup message: (ecx kind, al type, dl, ...): a suppressor picked up is kind 4
