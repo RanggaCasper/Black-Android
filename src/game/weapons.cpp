@@ -77,6 +77,9 @@ constexpr uint32_t kStaticAt = 0x2D0800;   // game globals around the managers (
 constexpr uint32_t kStaticBytes = 0x1000;
 constexpr int kPickupMax = 96;
 constexpr int kAmmoTypes = 10;
+constexpr int kMedkitCode = 0x400;        // the panel entry that adds a medkit (no weapon type reaches it)
+constexpr uint32_t kPlayerMedkits = 0x8E1;  // byte in the player: the medkits held (found by the pickup tracker), the game holds 3
+constexpr int kMedkitMax = 3;
 constexpr uint32_t kAmmoMax = 999;
 // weapon and its data
 constexpr uint32_t kWeaponType = 0;  // byte: index in the table
@@ -475,6 +478,7 @@ void Refresh() {
             if (can) v.choices.push_back({Label(name) + " + Suppressor", t | 0x100, supp});  // 0x100: with the suppressor
         }
         std::sort(v.choices.begin(), v.choices.end(), [](const auto& a, const auto& b) { return a.label < b.label; });
+        v.choices.push_back({"Medkit +1", kMedkitCode, false});  // after the sort: the last cell of the grid
     }
     std::lock_guard<std::mutex> lock(g_lock);
     v.status = g_view.status;
@@ -496,9 +500,17 @@ void FillWeapon(const Level& l, uint32_t weapon, bool top_up) {
         if (uint32_t mag = R32(weapon + kWeaponMagazine + m * 4)) FillType(l, R32(mag + kMagazineData), top_up);
 }
 
+void DoMedkit(const Level& l) {
+    uint8_t& n = G<uint8_t>(l.player + kPlayerMedkits);
+    if (n >= kMedkitMax) return SetStatus("Medkits full (" + std::to_string(kMedkitMax) + ")");
+    n++;
+    SetStatus("Medkit +1 (" + std::to_string(int(n)) + "/" + std::to_string(kMedkitMax) + ")");
+}
+
 void DoGive(X86Context& ctx, int code) {
     Level l;
     if (!ReadLevel(l)) return SetStatus("Only during a level");
+    if (code == kMedkitCode) return DoMedkit(l);
     int type = code & 0xFF;
     bool suppressed = (code & 0x100) != 0;
     if (code < 0 || type >= l.count) return;
