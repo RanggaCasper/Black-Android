@@ -117,6 +117,36 @@ std::string Label(const std::string& key_name) {
     return it == kNames.end() ? code : it->second + " (" + code + ")";
 }
 
+// ---- automatic suppressor: the game keeps a suppressed gun as its own weapon type, so the plain one is swapped for it ----
+// base code -> suppressed twin code (names as in the table, without the "BG1_" prefix). Check the "weapons: table" lines
+// in the log and fix this list to what the table really holds.
+const std::map<std::string, std::string> kSuppressed = {
+    {"PST", "PS5"}, {"GK1", "GK5"}, {"MP1", "MP5"}, {"SNR", "SN5"},
+};
+std::atomic<bool> g_auto_suppressor{true};
+
+std::string CodeOf(const std::string& key_name) {
+    return key_name.size() > 4 && key_name.compare(0, 4, "BG1_") == 0 ? key_name.substr(4) : key_name;
+}
+
+// the type of the suppressed twin of `type` in this manager's table, or `type` itself when it has none
+int SuppressedTwin(uint32_t manager, int type) {
+    uint32_t table = manager ? R32(manager) : 0;
+    if (!table || type < 0) return type;
+    int count = G<uint8_t>(table + kTableCount);
+    uint32_t entries = R32(table + kTableEntries);
+    if (!entries || type >= count || count > 64) return type;
+    auto key = [&](int t) {
+        uint32_t e = entries + uint32_t(t) * kEntrySize;
+        return R32(e) | uint64_t(R32(e + 4)) << 32;
+    };
+    auto it = kSuppressed.find(CodeOf(Decode(key(type))));
+    if (it == kSuppressed.end()) return type;
+    for (int t = 0; t < count; t++)
+        if (CodeOf(Decode(key(t))) == it->second) return t;
+    return type;
+}
+
 // what the game thread found and the panel shows
 std::mutex g_lock;
 weapons::View g_view;
@@ -369,6 +399,12 @@ void Refresh() {
     weapons::View v;
     v.in_level = ReadLevel(l);
     if (v.in_level) {
+        static uint32_t dumped_manager;  // once a level: every type of the table, to see which ones are suppressed
+        if (l.manager != dumped_manager) {
+            dumped_manager = l.manager;
+            for (int t = 0; t < l.count; t++)
+                LOGI("weapons: table %d = %s", t, Decode(EntryKey(l, t)).c_str());
+        }
         int slots = std::min<int>(G<uint8_t>(l.inventory + kInvSlotCount), 2);
         for (int t = 0; t < l.count; t++) {
             std::string name = Decode(EntryKey(l, t));
@@ -404,6 +440,7 @@ void DoGive(X86Context& ctx, int type) {
     Level l;
     if (!ReadLevel(l)) return SetStatus("Only during a level");
     if (type < 0 || type >= l.count) return;
+    if (g_auto_suppressor) type = SuppressedTwin(l.manager, type);
     std::string name = Decode(EntryKey(l, type));
     if (G<uint8_t>(l.inventory + kInvSlotCount) < 2) return SetStatus("The player has a single weapon slot here");
     if (R32(l.inventory + kInvRequest) || R32(l.inventory + kInvHeld) != R32(l.inventory + kInvSwitchTo))
@@ -523,6 +560,8 @@ void Give(int type) { g_give = type; }
 
 void FillAmmo() { g_fill = true; }
 
+void SetAutoSuppressor(bool on) { g_auto_suppressor = on; }  // add its declaration to game/weapons.h
+
 }  // namespace weapons
 
 // game thread, each menu and HUD tick (hooks.cpp MenuTick)
@@ -579,4 +618,20 @@ X86_EXTERN_FUNC(__imp__sub_001D3790);
 X86_FUNC(sub_001D3790) {
     ForgetExtraGuns();
     __imp__sub_001D3790(ctx, base);
+}
+
+// A weapon created for the player (a pickup, the level's loadout, the panel): the suppressed twin when there is one.
+// edi the weapon manager; (owner, type, 0) on the stack.
+X86_EXTERN_FUNC(__imp__sub_001CEE10);
+X86_FUNC(sub_001CEE10) {
+    uint32_t world = R32(kWorld);
+    if (g_auto_suppressor && world && R32(ctx.esp + 4) == world + kWorldPlayer) {
+        uint32_t arg = R32(ctx.esp + 8);
+        int twin = SuppressedTwin(ctx.edi, int(arg & 0xFF));
+        if (twin != int(arg & 0xFF)) {
+            LOGI("weapons: type %u becomes its suppressed twin %d", arg & 0xFF, twin);
+            W32(ctx.esp + 8, (arg & ~0xFFu) | uint32_t(twin));
+        }
+    }
+    __imp__sub_001CEE10(ctx, base);
 }
