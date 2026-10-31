@@ -73,6 +73,8 @@ constexpr bool kTrack = true;   // true: what each pickup (suppressor, medkit...
 constexpr uint32_t kPickupManager = 0x2D0D64;  // the pickup manager (or a pointer to it)
 constexpr uint32_t kPickupTable = 0x5844;      // its pickups, 0x160 bytes each: +0x140 kind, +0x148 type, +0x154 collected
 constexpr uint32_t kPickupSize = 0x160;
+constexpr uint32_t kStaticAt = 0x2D0800;   // game globals around the managers (track: ownership flags may live here)
+constexpr uint32_t kStaticBytes = 0x1000;
 constexpr int kPickupMax = 96;
 constexpr int kAmmoTypes = 10;
 constexpr uint32_t kAmmoMax = 999;
@@ -671,6 +673,7 @@ void WatchGather(const Level& l, std::vector<uint32_t>& addr) {
     range(R32(l.manager), 0x40);
     range(l.entries, uint32_t(l.count) * kEntrySize);
     range(PickupManager(), 0x800);
+    range(kStaticAt, kStaticBytes);
     std::sort(addr.begin(), addr.end());
     addr.erase(std::unique(addr.begin(), addr.end()), addr.end());
 }
@@ -686,6 +689,7 @@ std::string WatchName(const Level& l, uint32_t a) {
     else if (in(l.manager, 0x100)) std::snprintf(s, sizeof(s), "manager+0x%X", a - l.manager);
     else if (in(pm, 0x800)) std::snprintf(s, sizeof(s), "pickups+0x%X", a - pm);
     else if (in(l.player, 0x1000)) std::snprintf(s, sizeof(s), "player+0x%X", a - l.player);
+    else if (a >= kStaticAt && a < kStaticAt + kStaticBytes) std::snprintf(s, sizeof(s), "global %08X", a);
     else std::snprintf(s, sizeof(s), "world+0x%X", a - l.world);
     return s;
 }
@@ -714,12 +718,18 @@ void PickupDump() {
 
 void PickupWatch() {
     static bool dumped = false;
+    static uint32_t last_med = 0xFFFFFFFF;
     Watch& w = g_watch;
     Level l;
     if (!ReadLevel(l)) {
         w = Watch();
         dumped = false;
+        last_med = 0xFFFFFFFF;
         return;
+    }
+    if (uint32_t med = R32(l.inventory + 4); med != last_med) {  // medkit candidate: logged on every change (use too)
+        if (last_med != 0xFFFFFFFF) DiagLog("t=%.1f MEDKIT? inventory+4: %08X -> %08X", Seconds(), unsigned(last_med), unsigned(med));
+        last_med = med;
     }
     if (!dumped) {
         dumped = true;
