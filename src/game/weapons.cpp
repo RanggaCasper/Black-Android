@@ -77,7 +77,6 @@ constexpr uint32_t kStaticAt = 0x2D0800;   // game globals around the managers (
 constexpr uint32_t kStaticBytes = 0x1000;
 constexpr int kPickupMax = 96;
 constexpr int kAmmoTypes = 10;
-constexpr int kMedkitCode = 0x400;        // the panel entry that adds a medkit (no weapon type reaches it)
 constexpr uint32_t kPlayerMedkits = 0x8E1;  // byte in the player: the medkits held (found by the pickup tracker), the game holds 3
 constexpr int kMedkitMax = 3;
 constexpr uint32_t kAmmoMax = 999;
@@ -213,6 +212,7 @@ std::mutex g_lock;
 weapons::View g_view;
 std::atomic<int> g_give{-1};
 std::atomic<bool> g_fill{false};
+std::atomic<bool> g_medkits{false};
 
 void SetStatus(const std::string& text) {
     std::lock_guard<std::mutex> lock(g_lock);
@@ -478,7 +478,6 @@ void Refresh() {
             if (can) v.choices.push_back({Label(name) + " + Suppressor", t | 0x100, supp});  // 0x100: with the suppressor
         }
         std::sort(v.choices.begin(), v.choices.end(), [](const auto& a, const auto& b) { return a.label < b.label; });
-        v.choices.push_back({"Medkit +1", kMedkitCode, false});  // after the sort: the last cell of the grid
     }
     std::lock_guard<std::mutex> lock(g_lock);
     v.status = g_view.status;
@@ -500,17 +499,18 @@ void FillWeapon(const Level& l, uint32_t weapon, bool top_up) {
         if (uint32_t mag = R32(weapon + kWeaponMagazine + m * 4)) FillType(l, R32(mag + kMagazineData), top_up);
 }
 
-void DoMedkit(const Level& l) {
+void DoFillMedkits() {
+    Level l;
+    if (!ReadLevel(l)) return SetStatus("Only during a level");
     uint8_t& n = G<uint8_t>(l.player + kPlayerMedkits);
-    if (n >= kMedkitMax) return SetStatus("Medkits full (" + std::to_string(kMedkitMax) + ")");
-    n++;
-    SetStatus("Medkit +1 (" + std::to_string(int(n)) + "/" + std::to_string(kMedkitMax) + ")");
+    if (n >= kMedkitMax) return SetStatus("Medkits already full (" + std::to_string(kMedkitMax) + ")");
+    n = uint8_t(kMedkitMax);
+    SetStatus("Medkits filled (" + std::to_string(kMedkitMax) + "/" + std::to_string(kMedkitMax) + ")");
 }
 
 void DoGive(X86Context& ctx, int code) {
     Level l;
     if (!ReadLevel(l)) return SetStatus("Only during a level");
-    if (code == kMedkitCode) return DoMedkit(l);
     int type = code & 0xFF;
     bool suppressed = (code & 0x100) != 0;
     if (code < 0 || type >= l.count) return;
@@ -673,6 +673,20 @@ uint32_t PickupManager() {
     return v >= 0x10000000 ? v : kPickupManager;
 }
 
+// the heap objects the game's globals point to: (object, the global holding the pointer). A suppressor owned may live in
+// one of them, away from everything watched so far
+std::vector<std::pair<uint32_t, uint32_t>> g_static_ptrs;
+constexpr uint32_t kPtrBytes = 0x200;
+
+bool StaticPtrName(uint32_t a, char* s, size_t n) {
+    for (const auto& p : g_static_ptrs)
+        if (a >= p.first && a < p.first + kPtrBytes) {
+            std::snprintf(s, n, "via global %08X -> %08X+0x%X", unsigned(p.second), unsigned(p.first), unsigned(a - p.first));
+            return true;
+        }
+    return false;
+}
+
 void WatchGather(const Level& l, std::vector<uint32_t>& addr) {
     addr.clear();
     auto range = [&](uint32_t at, uint32_t bytes) {
@@ -686,7 +700,14 @@ void WatchGather(const Level& l, std::vector<uint32_t>& addr) {
     range(l.entries, uint32_t(l.count) * kEntrySize);
     range(PickupManager(), 0x800);
     range(kStaticAt, kStaticBytes);
-    range(PickupManager() + kPickupTable, kPickupMax * kPickupSize);  // the pickups themselves: a collected suppressor may be the ownership
+    g_static_ptrs.clear();
+    for (uint32_t a = kStaticAt; a < kStaticAt + kStaticBytes; a += 4) {
+        uint32_t v = R32(a);
+        if (v >= 0x81000000 && v < 0x83F00000 && !(v & 3) && g_static_ptrs.size() < 120) {
+            g_static_ptrs.push_back({v, a});
+            range(v, kPtrBytes);
+        }
+    }
     std::sort(addr.begin(), addr.end());
     addr.erase(std::unique(addr.begin(), addr.end()), addr.end());
 }
@@ -705,7 +726,8 @@ std::string WatchName(const Level& l, uint32_t a) {
     else if (in(pm, 0x800)) std::snprintf(s, sizeof(s), "pickups+0x%X", a - pm);
     else if (in(l.player, 0x1000)) std::snprintf(s, sizeof(s), "player+0x%X", a - l.player);
     else if (a >= kStaticAt && a < kStaticAt + kStaticBytes) std::snprintf(s, sizeof(s), "global %08X", a);
-    else std::snprintf(s, sizeof(s), "world+0x%X", a - l.world);
+    else if (a >= l.world && a < l.world + 0x6000) std::snprintf(s, sizeof(s), "world+0x%X", a - l.world);
+    else if (!StaticPtrName(a, s, sizeof(s))) std::snprintf(s, sizeof(s), "word %08X", a);
     return s;
 }
 
@@ -812,12 +834,15 @@ void PickupWatch() {
     if (w.hist.size() > 8) w.hist.pop_front();
     if (w.event >= 0 && t - w.event > 1.0) {
         int shown = 0;
-        for (size_t i = 0; i < addr.size() && shown < 200; i++) {
-            if (!w.quiet[i] || now[i] == w.before[i] || t - w.changed[i] < 0.4) continue;
-            DiagLog("t=%.1f PICKUP kind %u type %u %s: %08X -> %08X", t, unsigned(w.kind), unsigned(w.type),
-                    WatchName(l, addr[i]).c_str(), unsigned(w.before[i]), unsigned(now[i]));
-            shown++;
-        }
+        for (int pass = 0; pass < 2; pass++)  // small numbers (flags, counts, bits) first, then the rest
+            for (size_t i = 0; i < addr.size() && shown < 250; i++) {
+                if (!w.quiet[i] || now[i] == w.before[i] || t - w.changed[i] < 0.4) continue;
+                bool small = w.before[i] < 0x10000 && now[i] < 0x10000;
+                if (small != (pass == 0)) continue;
+                DiagLog("t=%.1f PICKUP kind %u type %u %s%s: %08X -> %08X", t, unsigned(w.kind), unsigned(w.type),
+                        small ? "[small] " : "", WatchName(l, addr[i]).c_str(), unsigned(w.before[i]), unsigned(now[i]));
+                shown++;
+            }
         DiagLog("t=%.1f PICKUP end, %d words", t, shown);
         std::vector<uint32_t> objs;  // heap objects the changed words now point to: items may be list nodes, not flags
         for (size_t i = 0; i < addr.size() && objs.size() < 10; i++) {
@@ -908,6 +933,7 @@ View Current() {
 void Give(int type) { g_give = type; }
 
 void FillAmmo() { g_fill = true; }
+void FillMedkits() { g_medkits = true; }
 
 void SetAutoSuppressor(bool on) { g_auto_suppressor = on; }  // add its declaration to game/weapons.h
 
@@ -918,6 +944,7 @@ void WeaponsTick(X86Context& ctx) {
     static int tick;
     if (int type = g_give.exchange(-1); type >= 0) DoGive(ctx, type);
     if (g_fill.exchange(false)) DoFill();
+    if (g_medkits.exchange(false)) DoFillMedkits();
     if (++tick % 10 == 0) Refresh();
     Heartbeat();
     Level l;
