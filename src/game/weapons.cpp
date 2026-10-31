@@ -73,8 +73,8 @@ constexpr bool kTrack = true;   // true: what each pickup (suppressor, medkit...
 constexpr uint32_t kPickupManager = 0x2D0D64;  // the pickup manager (or a pointer to it)
 constexpr uint32_t kPickupTable = 0x5844;      // its pickups, 0x160 bytes each: +0x140 kind, +0x148 type, +0x154 collected
 constexpr uint32_t kPickupSize = 0x160;
-constexpr uint32_t kStaticAt = 0x2D0800;   // game globals around the managers (track: ownership flags may live here)
-constexpr uint32_t kStaticBytes = 0x1000;
+constexpr uint32_t kStaticAt = 0x2D0000;   // game globals around the managers (track: ownership flags may live here)
+constexpr uint32_t kStaticBytes = 0x2000;
 constexpr int kPickupMax = 96;
 constexpr int kAmmoTypes = 10;
 constexpr uint32_t kPlayerMedkits = 0x8E1;  // byte in the player: the medkits held (found by the pickup tracker), the game holds 3
@@ -676,7 +676,19 @@ uint32_t PickupManager() {
 // the heap objects the game's globals point to: (object, the global holding the pointer). A suppressor owned may live in
 // one of them, away from everything watched so far
 std::vector<std::pair<uint32_t, uint32_t>> g_static_ptrs;
-constexpr uint32_t kPtrBytes = 0x200;
+constexpr uint32_t kPtrBytes = 0x800;
+constexpr uint32_t kDataBytes = 0x200;
+// per weapon type data blocks (pointed to by the table entries and the weapons): "suppressor owned" may live there
+std::vector<std::pair<uint32_t, std::string>> g_data_ptrs;
+
+bool DataName(uint32_t a, char* s, size_t n) {
+    for (const auto& p : g_data_ptrs)
+        if (a >= p.first && a < p.first + kDataBytes) {
+            std::snprintf(s, n, "%s%08X+0x%X", p.second.c_str(), unsigned(p.first), unsigned(a - p.first));
+            return true;
+        }
+    return false;
+}
 
 bool StaticPtrName(uint32_t a, char* s, size_t n) {
     for (const auto& p : g_static_ptrs)
@@ -703,11 +715,27 @@ void WatchGather(const Level& l, std::vector<uint32_t>& addr) {
     g_static_ptrs.clear();
     for (uint32_t a = kStaticAt; a < kStaticAt + kStaticBytes; a += 4) {
         uint32_t v = R32(a);
-        if (v >= 0x81000000 && v < 0x83F00000 && !(v & 3) && g_static_ptrs.size() < 120) {
+        if (v >= 0x81000000 && v < 0x83F00000 && !(v & 3) && g_static_ptrs.size() < 160) {
             g_static_ptrs.push_back({v, a});
             range(v, kPtrBytes);
         }
     }
+    g_data_ptrs.clear();
+    auto is_ptr = [](uint32_t v) { return v >= 0x81000000 && v < 0x83F00000 && !(v & 3); };
+    auto add_block = [&](uint32_t v, const char* fmt, int a, unsigned b) {
+        if (!is_ptr(v) || g_data_ptrs.size() >= 150) return;
+        char tag[64];
+        std::snprintf(tag, sizeof(tag), fmt, a, b);
+        g_data_ptrs.push_back({v, tag});
+        range(v, kDataBytes);
+    };
+    for (int t = 0; t < l.count; t++)  // +0 the name key (8 bytes), then the type's data
+        for (uint32_t o = 8; o < kEntrySize; o += 4)
+            add_block(R32(l.entries + uint32_t(t) * kEntrySize + o), "table[%d]+0x%X -> ", t, unsigned(o));
+    uint32_t pool_base = R32(l.manager + 4);
+    for (int i = 0; pool_base && i < 8; i++)
+        for (uint32_t o : {0xE8u, 0xECu})
+            add_block(R32(pool_base + uint32_t(i) * 0x110 + o), "weapon[%d]+0x%X -> ", i, unsigned(o));
     std::sort(addr.begin(), addr.end());
     addr.erase(std::unique(addr.begin(), addr.end()), addr.end());
 }
@@ -727,6 +755,7 @@ std::string WatchName(const Level& l, uint32_t a) {
     else if (in(l.player, 0x1000)) std::snprintf(s, sizeof(s), "player+0x%X", a - l.player);
     else if (a >= kStaticAt && a < kStaticAt + kStaticBytes) std::snprintf(s, sizeof(s), "global %08X", a);
     else if (a >= l.world && a < l.world + 0x6000) std::snprintf(s, sizeof(s), "world+0x%X", a - l.world);
+    else if (DataName(a, s, sizeof(s))) {}
     else if (!StaticPtrName(a, s, sizeof(s))) std::snprintf(s, sizeof(s), "word %08X", a);
     return s;
 }
