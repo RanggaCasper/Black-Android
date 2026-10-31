@@ -544,6 +544,31 @@ struct Region {
     }
 };
 
+void DumpRegion(int n, const char* name, uint32_t at, uint32_t size) {
+    for (uint32_t o = 0; o < size; o += 32) {
+        char line[256];
+        size_t len = size_t(std::snprintf(line, sizeof(line), "SNAP%d %s+%03X:", n, name, unsigned(o)));
+        for (uint32_t i = 0; i < 8 && o + i * 4 < size; i++)
+            len += size_t(std::snprintf(line + len, sizeof(line) - len, " %08X", unsigned(R32(at + o + i * 4))));
+        DiagLog("%s", line);
+    }
+}
+
+void Snapshot(const Level& l, uint32_t w) {
+    static int n;
+    static double next = 0;
+    double t = Seconds();
+    if (t < next) return;
+    next = t + 10;
+    n++;
+    DiagLog("t=%.1f SNAP%d begin", t, n);
+    DumpRegion(n, "weapon", w, 0x110);
+    if (uint32_t d = R32(w + kWeaponData)) DumpRegion(n, "data", d, 0x100);
+    if (uint32_t m = R32(w + kWeaponMagazine)) DumpRegion(n, "mag", m, 0x80);
+    DumpRegion(n, "inv", l.inventory, 0x200);
+    DumpRegion(n, "player", l.player, 0x300);
+}
+
 void SuppressorProbe() {
     static uint32_t last_weapon, last_data;
     static int last_type = -1, last_mark = -1;
@@ -581,6 +606,7 @@ void SuppressorProbe() {
     if (d) data.Scan("data", d, 0x100);
     if (uint32_t mag = R32(w + kWeaponMagazine)) magazine.Scan("magazine", mag, 0x80);
     inventory.Scan("inventory", l.inventory, 0x100);
+    Snapshot(l, w);
 }
 
 // ---- temporary: what the pickup of a suppressor changes ---------------------------------------------------------
@@ -651,10 +677,11 @@ void PickupWatch() {
     }
 }
 
-void PickupEvent(uint32_t category, uint32_t type) {
+void PickupEvent(uint32_t category, uint32_t type, uint32_t ret) {
     Level l;
     if (!ReadLevel(l)) return;
-    DiagLog("t=%.1f pickup message: kind %u, type %u", Seconds(), category, type);
+    if (category != 0)
+        DiagLog("t=%.1f pickup message: kind %u, type %u, caller %08X", Seconds(), category, type, unsigned(ret));
     Watch& w = g_watch;
     if (category != 4 || w.addr.empty() || w.hist.empty()) return;
     w.event = Seconds();
@@ -776,6 +803,6 @@ X86_FUNC(sub_001CEE10) {
 // the game's pickup message: (ecx kind, al type, dl, ...): a suppressor picked up is kind 4
 X86_EXTERN_FUNC(__imp__sub_0012B510);
 X86_FUNC(sub_0012B510) {
-    PickupEvent(ctx.ecx, ctx.eax & 0xFF);
+    PickupEvent(ctx.ecx, ctx.eax & 0xFF, R32(ctx.esp));
     __imp__sub_0012B510(ctx, base);
 }
