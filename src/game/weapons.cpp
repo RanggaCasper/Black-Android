@@ -547,6 +547,26 @@ void SuppressorProbe() {
         inventory.Scan("inventory", l.inventory, 0x60);
 }
 
+// logs the level loader's step whenever it changes: shows that the tick runs and why a level is not read
+void Heartbeat() {
+    static uint32_t last_state = 0xFFFFFFFF;
+    static int last_ok = -1;
+    uint32_t world = R32(kWorld);
+    uint32_t state = world ? R32(world + kWorldState) : 0xFFFFFFFE;
+    Level l;
+    int ok = ReadLevel(l) ? 1 : 0;
+    if (state == last_state && ok == last_ok) return;
+    last_state = state;
+    last_ok = ok;
+    LOGI("weapons: tick world=%08X state=%X level=%d", unsigned(world), unsigned(state), ok);
+    if (world && !ok && state == kStatePlaying) {
+        uint32_t player = world + kWorldPlayer, inv = player + kPlayerInventory;
+        LOGI("weapons: kind=%u owner=%08X (player %08X) slots=%08X manager=%08X", unsigned(R32(player + kPlayerKind)),
+             unsigned(R32(inv + kInvOwner)), unsigned(player), unsigned(R32(inv + kInvSlots)),
+             unsigned(R32(kWeaponManager)));
+    }
+}
+
 }  // namespace
 
 namespace weapons {
@@ -570,6 +590,7 @@ void WeaponsTick(X86Context& ctx) {
     if (int type = g_give.exchange(-1); type >= 0) DoGive(ctx, type);
     if (g_fill.exchange(false)) DoFill();
     if (++tick % 10 == 0) Refresh();
+    Heartbeat();
     SuppressorProbe();
 }
 
