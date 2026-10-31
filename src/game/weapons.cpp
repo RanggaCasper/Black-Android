@@ -127,7 +127,7 @@ std::string Label(const std::string& key_name) {
 
 // ---- automatic suppressor: weapon+0x108 is 1 while the suppressor is on ----------------------------------------
 // Weapons whose table code is listed get it set once when they are in hand and idle. The default list is what the
-// logs proved (Glock, AK-47); suppressor_codes.txt beside the log (codes separated by spaces, e.g. "GK1 AK1 MP1")
+// tests proved (Glock, AK-47, Pistol, MP5, Walther 2000, Uzi, G36C, MAC-10, P90, M16); suppressor_codes.txt beside the log (codes separated by spaces, e.g. "GK1 AK1 MP1")
 // replaces it, to try other weapons.
 std::atomic<bool> g_auto_suppressor{false};  // the panel offers both versions of each weapon; true also forces it on pickups
 std::set<std::string> g_supp_codes;
@@ -158,7 +158,7 @@ void LoadSuppressorCodes() {
     static bool done;
     if (done) return;
     done = true;
-    g_supp_codes = {"GK1", "AK1"};
+    g_supp_codes = {"GK1", "AK1", "PST", "MP1", "SNR", "SMG", "ASR", "SM3", "P90", "M16"};  // all checked in game
     std::ifstream f("/storage/emulated/0/Black/SaveData/suppressor_codes.txt");
     std::set<std::string> codes;
     std::string tok;
@@ -495,6 +495,17 @@ void DoGive(X86Context& ctx, int code) {
     uint32_t slots = R32(l.inventory + kInvSlots);
     uint32_t old = R32(slots + uint32_t(other) * 4);
     if (old && old == R32(l.inventory + kInvHeld)) return SetStatus("Wait for the weapon switch to end");
+    // the game never keeps two of one gun: the one in hand only changes its suppressor (the sound follows at the next
+    // weapon switch), and one in the other slot with the same suppressor state is left alone
+    std::string shown = Label(name) + (suppressed ? " + Suppressor" : "");
+    if (uint32_t in_hand = R32(l.inventory + kInvHeld); in_hand && G<uint8_t>(in_hand + kWeaponType) == type) {
+        if ((R32(in_hand + kWeaponSuppressed) != 0) == suppressed) return SetStatus(shown + " is already in hand");
+        W32(in_hand + kWeaponSuppressed, suppressed ? 1 : 0);
+        g_applied[in_hand] = type;
+        return SetStatus(shown + " set in hand (sound changes after a weapon switch)");
+    }
+    if (old && G<uint8_t>(old + kWeaponType) == type && (R32(old + kWeaponSuppressed) != 0) == suppressed)
+        return SetStatus(shown + " is already in the other slot");
     // the gun made first: a full pool keeps the old one
     uint32_t edi = ctx.edi;
     ctx.edi = l.manager;
