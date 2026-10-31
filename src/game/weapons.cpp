@@ -718,18 +718,22 @@ void PickupDump() {
 
 void PickupWatch() {
     static bool dumped = false;
-    static uint32_t last_med = 0xFFFFFFFF;
+    static uint32_t last_med = 0xFFFFFFFF, last_cnt = 0xFFFFFFFF;
     Watch& w = g_watch;
     Level l;
     if (!ReadLevel(l)) {
         w = Watch();
         dumped = false;
-        last_med = 0xFFFFFFFF;
+        last_med = last_cnt = 0xFFFFFFFF;
         return;
     }
     if (uint32_t med = R32(l.inventory + 4); med != last_med) {  // medkit candidate: logged on every change (use too)
         if (last_med != 0xFFFFFFFF) DiagLog("t=%.1f MEDKIT? inventory+4: %08X -> %08X", Seconds(), unsigned(last_med), unsigned(med));
         last_med = med;
+    }
+    if (uint32_t cnt = R32(l.player + 0xAD4); cnt != last_cnt) {  // medkit count candidate
+        if (last_cnt != 0xFFFFFFFF) DiagLog("t=%.1f MEDKIT? player+0xAD4: %08X -> %08X", Seconds(), unsigned(last_cnt), unsigned(cnt));
+        last_cnt = cnt;
     }
     if (!dumped) {
         dumped = true;
@@ -766,13 +770,24 @@ void PickupWatch() {
             shown++;
         }
         DiagLog("t=%.1f PICKUP end, %d words", t, shown);
+        std::vector<uint32_t> objs;  // heap objects the changed words now point to: items may be list nodes, not flags
+        for (size_t i = 0; i < addr.size() && objs.size() < 10; i++) {
+            uint32_t v = now[i];
+            if (!w.quiet[i] || v == w.before[i] || v < 0x81000000 || v >= 0x84000000) continue;
+            if (std::find(objs.begin(), objs.end(), v) == objs.end()) objs.push_back(v);
+        }
+        for (uint32_t o : objs)
+            DiagLog("t=%.1f PICKUP obj %08X: %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X", t, unsigned(o), unsigned(R32(o)),
+                    unsigned(R32(o + 4)), unsigned(R32(o + 8)), unsigned(R32(o + 12)), unsigned(R32(o + 16)),
+                    unsigned(R32(o + 20)), unsigned(R32(o + 24)), unsigned(R32(o + 28)), unsigned(R32(o + 32)),
+                    unsigned(R32(o + 36)));
         w.event = -1;
     }
 }
 
 void PickupEvent(uint32_t category, uint32_t type, uint32_t ret) {
     Level l;
-    if (!kTrack || category == 0 || !ReadLevel(l)) return;
+    if (!kTrack || category > 4 || !ReadLevel(l)) return;  // kind 0 too: the medkit may be it
     DiagLog("t=%.1f pickup message: kind %u, type %u, caller %08X", Seconds(), category, type, unsigned(ret));
     Watch& w = g_watch;
     if (w.event >= 0 || w.addr.empty() || w.hist.empty()) return;
