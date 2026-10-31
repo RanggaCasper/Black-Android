@@ -68,7 +68,12 @@ constexpr uint32_t kInvRequest = 0x38;   // 2 asks to switch to the other slot, 
 constexpr uint32_t kInvBusy = 0xB4;       // 0x13 while the suppressor animation runs
 constexpr uint32_t kInvSlotCount = 0x42;  // byte
 constexpr uint32_t kInvSlotHeld = 0x43;   // byte
-constexpr bool kProbe = false;  // true: the diagnostic probes write weapons_diag.log
+constexpr bool kProbe = false;  // true: the old per word probe writes weapons_diag.log
+constexpr bool kTrack = true;   // true: what each pickup (suppressor, medkit...) changes in memory is logged
+constexpr uint32_t kPickupManager = 0x2D0D64;  // the pickup manager (or a pointer to it)
+constexpr uint32_t kPickupTable = 0x5844;      // its pickups, 0x160 bytes each: +0x140 kind, +0x148 type, +0x154 collected
+constexpr uint32_t kPickupSize = 0x160;
+constexpr int kPickupMax = 96;
 constexpr int kAmmoTypes = 10;
 constexpr uint32_t kAmmoMax = 999;
 // weapon and its data
@@ -168,7 +173,7 @@ void LoadSuppressorCodes() {
     static bool done;
     if (done) return;
     done = true;
-    g_supp_codes = {"GK1", "AK1", "PST", "MP1", "SNR", "SMG", "ASR", "SM3", "P90", "M16"};  // all checked in game
+    g_supp_codes = {"GK1", "AK1", "PST", "MP1", "SNR", "SMG", "ASR", "SM3", "P90", "M16", "BNS"};  // checked in game; BNS (M16A2 + M203) still to check
     std::ifstream f("/storage/emulated/0/Black/SaveData/suppressor_codes.txt");
     std::set<std::string> codes;
     std::string tok;
@@ -635,56 +640,109 @@ void SuppressorProbe() {
     inventory.Scan("inventory", l.inventory, 0x100);
 }
 
-// ---- temporary: what the pickup of a suppressor changes ---------------------------------------------------------
-// The game's pickup message (sub_0012B510: ecx the kind, 4 the "silent" ones, a suppressor; al which of the nine) marks
-// the moment. The words of the weapon pool, the inventory and the player that held still for two seconds before it and
-// differ a second after are logged, so no timing is needed.
+// ---- temporary: what a pickup changes ------------------------------------------------------------------------------
+// The game's pickup message (sub_0012B510: ecx the kind, 4 the suppressors, al the type) marks the moment. The words of
+// the world, the player, the weapon pool, the weapon table and the pickup manager that held still for two seconds before
+// it and differ a second after are logged, so no timing is needed. A medkit is told by the kind and type it shows.
 struct Watch {
     std::vector<uint32_t> addr, now, before;
     std::deque<std::vector<uint32_t>> hist;  // the last ticks, the oldest is the state before the pickup
     std::vector<double> changed;             // seconds of each word's last change
     std::vector<char> quiet;
     double event = -1;
+    uint32_t kind = 0, type = 0;
 };
 Watch g_watch;
 
+// the pickup manager: the global itself or a pointer to it
+uint32_t PickupManager() {
+    uint32_t v = R32(kPickupManager);
+    return v >= 0x10000000 ? v : kPickupManager;
+}
+
 void WatchGather(const Level& l, std::vector<uint32_t>& addr) {
     addr.clear();
-    uint32_t pool = R32(l.manager + 4);
-    for (uint32_t i = 0; pool && i < 8 * 0x110 / 4; i++) addr.push_back(pool + i * 4);
-    for (uint32_t i = 0; i < 0x80; i++) addr.push_back(l.inventory + i * 4);
-    for (uint32_t i = 0; i < 0xC0; i++) addr.push_back(l.player + i * 4);
+    auto range = [&](uint32_t at, uint32_t bytes) {
+        for (uint32_t i = 0; at && i < bytes / 4; i++) addr.push_back(at + i * 4);
+    };
+    range(l.world, 0x6000);
+    range(l.player, 0x1000);
+    range(R32(l.manager + 4), 8 * 0x110);
+    range(l.manager, 0x100);
+    range(R32(l.manager), 0x40);
+    range(l.entries, uint32_t(l.count) * kEntrySize);
+    range(PickupManager(), 0x800);
+    std::sort(addr.begin(), addr.end());
+    addr.erase(std::unique(addr.begin(), addr.end()), addr.end());
 }
 
 std::string WatchName(const Level& l, uint32_t a) {
     char s[64];
-    uint32_t pool = R32(l.manager + 4);
-    if (pool && a >= pool && a < pool + 8 * 0x110) std::snprintf(s, sizeof(s), "weapon[%u]+0x%X", (a - pool) / 0x110, (a - pool) % 0x110);
-    else if (a >= l.inventory && a < l.inventory + 0x200) std::snprintf(s, sizeof(s), "inventory+0x%X", a - l.inventory);
-    else std::snprintf(s, sizeof(s), "player+0x%X", a - l.player);
+    auto in = [&](uint32_t at, uint32_t bytes) { return at && a >= at && a < at + bytes; };
+    uint32_t pool = R32(l.manager + 4), pm = PickupManager();
+    if (in(pool, 8 * 0x110)) std::snprintf(s, sizeof(s), "weapon[%u]+0x%X", (a - pool) / 0x110, (a - pool) % 0x110);
+    else if (in(l.inventory, 0x200)) std::snprintf(s, sizeof(s), "inventory+0x%X", a - l.inventory);
+    else if (in(l.entries, uint32_t(l.count) * kEntrySize))
+        std::snprintf(s, sizeof(s), "table[%u]+0x%X", (a - l.entries) / kEntrySize, (a - l.entries) % kEntrySize);
+    else if (in(l.manager, 0x100)) std::snprintf(s, sizeof(s), "manager+0x%X", a - l.manager);
+    else if (in(pm, 0x800)) std::snprintf(s, sizeof(s), "pickups+0x%X", a - pm);
+    else if (in(l.player, 0x1000)) std::snprintf(s, sizeof(s), "player+0x%X", a - l.player);
+    else std::snprintf(s, sizeof(s), "world+0x%X", a - l.world);
     return s;
 }
 
+// once a level: the pickups the game placed (kind, type, state and the first words, where the position is)
+void PickupDump() {
+    uint32_t pm = PickupManager();
+    DiagLog("pickups: manager %08X, table %08X: %08X %08X %08X %08X", unsigned(pm), unsigned(pm + kPickupTable),
+            unsigned(R32(pm + kPickupTable)), unsigned(R32(pm + kPickupTable + 4)), unsigned(R32(pm + kPickupTable + 8)),
+            unsigned(R32(pm + kPickupTable + 12)));
+    int shown = 0;
+    for (int i = 0; i < kPickupMax && shown < 100; i++) {
+        uint32_t o = pm + kPickupTable + uint32_t(i) * kPickupSize;
+        uint32_t kind = R32(o + 0x140);
+        if (kind < 1 || kind > 4) continue;
+        char line[256];
+        size_t len = size_t(std::snprintf(line, sizeof(line), "pickup[%d] kind %u type %u collected %u:", i, unsigned(kind),
+                                          unsigned(G<uint8_t>(o + 0x148)), unsigned(R32(o + 0x154))));
+        for (uint32_t w = 0; w < 12; w++)
+            len += size_t(std::snprintf(line + len, sizeof(line) - len, " %08X", unsigned(R32(o + w * 4))));
+        DiagLog("%s", line);
+        shown++;
+    }
+    DiagLog("pickups: %d listed", shown);
+}
+
 void PickupWatch() {
+    static bool dumped = false;
     Watch& w = g_watch;
     Level l;
     if (!ReadLevel(l)) {
         w = Watch();
+        dumped = false;
         return;
+    }
+    if (!dumped) {
+        dumped = true;
+        PickupDump();
     }
     double t = Seconds();
-    std::vector<uint32_t> addr;
-    WatchGather(l, addr);
-    std::vector<uint32_t> now(addr.size());
-    for (size_t i = 0; i < addr.size(); i++) now[i] = R32(addr[i]);
-    if (addr != w.addr) {
+    static std::vector<uint32_t> last_key;  // the pointers the watched words come from; rebuilt only when they move
+    std::vector<uint32_t> key = {l.world, l.player, R32(l.manager + 4), l.manager, R32(l.manager), l.entries,
+                                 uint32_t(l.count), PickupManager()};
+    if (key != last_key || w.addr.empty()) {
+        last_key = key;
         w = Watch();
-        w.addr = addr;
-        w.now = now;
-        w.changed.assign(addr.size(), -100.0);
-        w.quiet.assign(addr.size(), 0);
+        WatchGather(l, w.addr);
+        w.now.resize(w.addr.size());
+        for (size_t i = 0; i < w.addr.size(); i++) w.now[i] = R32(w.addr[i]);
+        w.changed.assign(w.addr.size(), -100.0);
+        w.quiet.assign(w.addr.size(), 0);
         return;
     }
+    const std::vector<uint32_t>& addr = w.addr;
+    std::vector<uint32_t> now(addr.size());
+    for (size_t i = 0; i < addr.size(); i++) now[i] = R32(addr[i]);
     for (size_t i = 0; i < addr.size(); i++)
         if (now[i] != w.now[i]) w.changed[i] = t;
     w.now = now;
@@ -692,25 +750,26 @@ void PickupWatch() {
     if (w.hist.size() > 8) w.hist.pop_front();
     if (w.event >= 0 && t - w.event > 1.0) {
         int shown = 0;
-        for (size_t i = 0; i < addr.size() && shown < 80; i++) {
+        for (size_t i = 0; i < addr.size() && shown < 200; i++) {
             if (!w.quiet[i] || now[i] == w.before[i] || t - w.changed[i] < 0.4) continue;
-            DiagLog("t=%.1f SILENT-PICKUP %s: %08X -> %08X", t, WatchName(l, addr[i]).c_str(), unsigned(w.before[i]),
-                    unsigned(now[i]));
+            DiagLog("t=%.1f PICKUP kind %u type %u %s: %08X -> %08X", t, unsigned(w.kind), unsigned(w.type),
+                    WatchName(l, addr[i]).c_str(), unsigned(w.before[i]), unsigned(now[i]));
             shown++;
         }
-        DiagLog("t=%.1f SILENT-PICKUP end, %d words", t, shown);
+        DiagLog("t=%.1f PICKUP end, %d words", t, shown);
         w.event = -1;
     }
 }
 
 void PickupEvent(uint32_t category, uint32_t type, uint32_t ret) {
     Level l;
-    if (!ReadLevel(l)) return;
-    if (kProbe && category != 0)
-        DiagLog("t=%.1f pickup message: kind %u, type %u, caller %08X", Seconds(), category, type, unsigned(ret));
+    if (!kTrack || category == 0 || !ReadLevel(l)) return;
+    DiagLog("t=%.1f pickup message: kind %u, type %u, caller %08X", Seconds(), category, type, unsigned(ret));
     Watch& w = g_watch;
-    if (category != 4 || w.addr.empty() || w.hist.empty()) return;
+    if (w.event >= 0 || w.addr.empty() || w.hist.empty()) return;
     w.event = Seconds();
+    w.kind = category;
+    w.type = type;
     w.before = w.hist.front();
     for (size_t i = 0; i < w.addr.size(); i++) w.quiet[i] = w.event - w.changed[i] > 2.0;
 }
@@ -795,10 +854,8 @@ void WeaponsTick(X86Context& ctx) {
         g_applied.clear();
         g_swap_back = 0;
     }
-    if (kProbe) {
-        PickupWatch();
-        SuppressorProbe();
-    }
+    if (kTrack) PickupWatch();
+    if (kProbe) SuppressorProbe();
 }
 
 // the game's file opening: a first person bank the level lacks comes from another level's folder
