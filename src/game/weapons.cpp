@@ -503,11 +503,19 @@ void DoFill() {
 namespace {
 
 // ---- temporary: finds where the game keeps "suppressor on" ----------------------------------------------------
-// Logs the words of the held weapon, its data and the inventory that settle on a new value and stay there
+// Logs the words of the held weapon, its data, its magazine and the inventory that settle on a new value and stay
+// there. A word that keeps changing (positions, animation clocks) is muted after a few changes: a flag is not one.
+// Lines carry the seconds since the level began and a "mark" every five seconds, to tell what was done when.
 struct Probe {
     uint32_t cur, stable;
+    int changes;
     std::chrono::steady_clock::time_point since;
 };
+
+double Seconds() {
+    static const auto start = std::chrono::steady_clock::now();
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
 
 struct Region {
     std::vector<Probe> words;
@@ -515,7 +523,7 @@ struct Region {
         auto now = std::chrono::steady_clock::now();
         if (words.empty()) {
             words.resize(size / 4);
-            for (uint32_t i = 0; i < words.size(); i++) words[i] = {R32(at + i * 4), R32(at + i * 4), now};
+            for (uint32_t i = 0; i < words.size(); i++) words[i] = {R32(at + i * 4), R32(at + i * 4), 0, now};
             return;
         }
         for (uint32_t i = 0; i < words.size(); i++) {
@@ -524,9 +532,11 @@ struct Region {
             if (v != p.cur) {
                 p.cur = v;
                 p.since = now;
-            } else if (p.cur != p.stable && now - p.since > std::chrono::milliseconds(1500)) {
-                DiagLog("suppressor-probe: %s+0x%X: %08X -> %08X", name, unsigned(i * 4), unsigned(p.stable),
-                     unsigned(p.cur));
+                p.changes++;
+            } else if (p.cur != p.stable && now - p.since > std::chrono::milliseconds(1200)) {
+                if (p.changes <= 6)
+                    DiagLog("t=%.1f probe %s+0x%X: %08X -> %08X", Seconds(), name, unsigned(i * 4), unsigned(p.stable),
+                            unsigned(p.cur));
                 p.stable = p.cur;
             }
         }
@@ -535,8 +545,8 @@ struct Region {
 
 void SuppressorProbe() {
     static uint32_t last_weapon, last_data;
-    static int last_type = -1;
-    static Region object, data, inventory;
+    static int last_type = -1, last_mark = -1;
+    static Region object, data, magazine, inventory;
     Level l;
     if (!ReadLevel(l)) {
         last_weapon = 0;
@@ -544,25 +554,32 @@ void SuppressorProbe() {
     }
     uint32_t w = R32(l.inventory + kInvHeld);
     if (!w) return;
+    int mark = int(Seconds() / 5);
+    if (mark != last_mark) {
+        last_mark = mark;
+        DiagLog("t=%.1f mark %d", Seconds(), mark * 5);
+    }
     int type = G<uint8_t>(w + kWeaponType);
     if (w != last_weapon || type != last_type) {
         last_weapon = w;
         last_type = type;
         object.words.clear();
         data.words.clear();
+        magazine.words.clear();
         inventory.words.clear();
         std::string name = type < l.count ? Label(Decode(EntryKey(l, type))) : "?";
-        DiagLog("suppressor-probe: weapon %08X type %d %s", unsigned(w), type, name.c_str());
+        DiagLog("t=%.1f probe: weapon %08X type %d %s", Seconds(), unsigned(w), type, name.c_str());
     }
     uint32_t d = R32(w + kWeaponData);
     if (d != last_data) {
         last_data = d;
         data.words.clear();
-        DiagLog("suppressor-probe: data pointer %08X", unsigned(d));
+        DiagLog("t=%.1f probe: data pointer %08X", Seconds(), unsigned(d));
     }
     object.Scan("weapon", w, 0x110);
     if (d) data.Scan("data", d, 0x100);
-        inventory.Scan("inventory", l.inventory, 0x60);
+    if (uint32_t mag = R32(w + kWeaponMagazine)) magazine.Scan("magazine", mag, 0x80);
+    inventory.Scan("inventory", l.inventory, 0x100);
 }
 
 // logs the level loader's step whenever it changes: shows that the tick runs and why a level is not read
