@@ -674,6 +674,7 @@ void WatchGather(const Level& l, std::vector<uint32_t>& addr) {
     range(l.entries, uint32_t(l.count) * kEntrySize);
     range(PickupManager(), 0x800);
     range(kStaticAt, kStaticBytes);
+    range(PickupManager() + kPickupTable, kPickupMax * kPickupSize);  // the pickups themselves: a collected suppressor may be the ownership
     std::sort(addr.begin(), addr.end());
     addr.erase(std::unique(addr.begin(), addr.end()), addr.end());
 }
@@ -687,6 +688,8 @@ std::string WatchName(const Level& l, uint32_t a) {
     else if (in(l.entries, uint32_t(l.count) * kEntrySize))
         std::snprintf(s, sizeof(s), "table[%u]+0x%X", (a - l.entries) / kEntrySize, (a - l.entries) % kEntrySize);
     else if (in(l.manager, 0x100)) std::snprintf(s, sizeof(s), "manager+0x%X", a - l.manager);
+    else if (in(pm + kPickupTable, kPickupMax * kPickupSize))
+        std::snprintf(s, sizeof(s), "pickup[%u]+0x%X", (a - pm - kPickupTable) / kPickupSize, (a - pm - kPickupTable) % kPickupSize);
     else if (in(pm, 0x800)) std::snprintf(s, sizeof(s), "pickups+0x%X", a - pm);
     else if (in(l.player, 0x1000)) std::snprintf(s, sizeof(s), "player+0x%X", a - l.player);
     else if (a >= kStaticAt && a < kStaticAt + kStaticBytes) std::snprintf(s, sizeof(s), "global %08X", a);
@@ -731,8 +734,8 @@ void PickupWatch() {
         if (last_med != 0xFFFFFFFF) DiagLog("t=%.1f MEDKIT? inventory+4: %08X -> %08X", Seconds(), unsigned(last_med), unsigned(med));
         last_med = med;
     }
-    if (uint32_t cnt = R32(l.player + 0xAD4); cnt != last_cnt) {  // medkit count candidate
-        if (last_cnt != 0xFFFFFFFF) DiagLog("t=%.1f MEDKIT? player+0xAD4: %08X -> %08X", Seconds(), unsigned(last_cnt), unsigned(cnt));
+    if (uint32_t cnt = R32(l.player + 0x8E0); cnt != last_cnt) {  // medkit count candidate: byte +0x8E1
+        if (last_cnt != 0xFFFFFFFF) DiagLog("t=%.1f MEDKIT? player+0x8E0: %08X -> %08X", Seconds(), unsigned(last_cnt), unsigned(cnt));
         last_cnt = cnt;
     }
     if (!dumped) {
