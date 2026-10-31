@@ -719,6 +719,39 @@ void PickupDump() {
     DiagLog("pickups: %d listed", shown);
 }
 
+// the weapon in hand: all its words, once it is idle after it came out and again when its suppressor flag changes, to
+// compare a weapon the game made (a pickup) with one the panel gave
+void WeaponDump(const Level& l) {
+    static uint32_t last_w = 0, last_flag = 0xFFFFFFFF;
+    static double since = 0;
+    static bool dumped = false;
+    uint32_t w = R32(l.inventory + kInvHeld);
+    if (!w) {
+        last_w = 0;
+        return;
+    }
+    double t = Seconds();
+    if (w != last_w) {
+        last_w = w;
+        since = t;
+        dumped = false;
+        last_flag = 0xFFFFFFFF;
+    }
+    uint32_t flag = R32(w + kWeaponSuppressed);
+    bool idle = !R32(w + kWeaponAnim) && R32(l.inventory + kInvBusy) != 0x13;  // +0xB4 is 6 for a rifle at rest
+    if (!idle || t - since < 2.5) return;
+    if (dumped && flag == last_flag) return;
+    dumped = true;
+    last_flag = flag;
+    int type = G<uint8_t>(w + kWeaponType);
+    std::string name = type < l.count ? Label(Decode(EntryKey(l, type))) : "?";
+    DiagLog("t=%.1f WEAPON %08X type %d %s flag %u:", t, unsigned(w), type, name.c_str(), unsigned(flag));
+    for (uint32_t o = 0; o < 0x110; o += 32)
+        DiagLog("  +%03X: %08X %08X %08X %08X %08X %08X %08X %08X", unsigned(o), unsigned(R32(w + o)), unsigned(R32(w + o + 4)),
+                unsigned(R32(w + o + 8)), unsigned(R32(w + o + 12)), unsigned(R32(w + o + 16)), unsigned(R32(w + o + 20)),
+                unsigned(R32(w + o + 24)), unsigned(R32(w + o + 28)));
+}
+
 void PickupWatch() {
     static bool dumped = false;
     static uint32_t last_med = 0xFFFFFFFF, last_cnt = 0xFFFFFFFF;
@@ -730,6 +763,7 @@ void PickupWatch() {
         last_med = last_cnt = 0xFFFFFFFF;
         return;
     }
+    WeaponDump(l);
     if (uint32_t med = R32(l.inventory + 4); med != last_med) {  // medkit candidate: logged on every change (use too)
         if (last_med != 0xFFFFFFFF) DiagLog("t=%.1f MEDKIT? inventory+4: %08X -> %08X", Seconds(), unsigned(last_med), unsigned(med));
         last_med = med;
@@ -791,6 +825,7 @@ void PickupWatch() {
 void PickupEvent(uint32_t category, uint32_t type, uint32_t ret) {
     Level l;
     if (!kTrack || category > 4 || !ReadLevel(l)) return;  // kind 0 too: the medkit may be it
+    if (category == 0 && ret != 0x001BEDF8) return;  // kind 0 from another caller comes by the hundred (healing)
     DiagLog("t=%.1f pickup message: kind %u, type %u, caller %08X", Seconds(), category, type, unsigned(ret));
     Watch& w = g_watch;
     if (w.event >= 0 || w.addr.empty() || w.hist.empty()) return;
