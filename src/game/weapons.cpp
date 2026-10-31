@@ -122,7 +122,7 @@ const std::map<std::string, std::string> kNames = {
 std::string Label(const std::string& key_name) {
     std::string code = key_name.size() > 4 && key_name.compare(0, 4, "BG1_") == 0 ? key_name.substr(4) : key_name;
     auto it = kNames.find(code);
-    return it == kNames.end() ? code : it->second + " (" + code + ")";
+    return it == kNames.end() ? code : it->second;
 }
 
 // ---- automatic suppressor: weapon+0x108 is 1 while the suppressor is on ----------------------------------------
@@ -132,6 +132,7 @@ std::string Label(const std::string& key_name) {
 std::atomic<bool> g_auto_suppressor{false};  // the panel offers both versions of each weapon; true also forces it on pickups
 std::set<std::string> g_supp_codes;
 std::map<uint32_t, int> g_applied;  // weapon object -> type it was handled as
+uint32_t g_swap_back = 0;           // a weapon to bring back out once the other one is in hand
 
 std::string CodeOf(const std::string& key_name) {
     return key_name.size() > 4 && key_name.compare(0, 4, "BG1_") == 0 ? key_name.substr(4) : key_name;
@@ -147,7 +148,16 @@ void DiagLog(const char* fmt, ...) {
     LOGI("%s", line);
     static std::mutex lock;
     std::lock_guard<std::mutex> guard(lock);
-    if (FILE* f = std::fopen("/storage/emulated/0/Black/SaveData/weapons_diag.log", "a")) {
+    static const char* path = "/storage/emulated/0/Black/SaveData/weapons_diag.log";
+    static bool first = true;
+    static int lines = 0;
+    if (first) {  // every run starts a fresh file; the run before is kept as weapons_diag_prev.log
+        first = false;
+        std::rename(path, "/storage/emulated/0/Black/SaveData/weapons_diag_prev.log");
+    }
+    if (lines >= 3000) return;  // a runaway probe cannot fill the storage
+    lines++;
+    if (FILE* f = std::fopen(path, "a")) {
         std::fputs(line, f);
         std::fputc('\n', f);
         std::fclose(f);
@@ -502,7 +512,10 @@ void DoGive(X86Context& ctx, int code) {
         if ((R32(in_hand + kWeaponSuppressed) != 0) == suppressed) return SetStatus(shown + " is already in hand");
         W32(in_hand + kWeaponSuppressed, suppressed ? 1 : 0);
         g_applied[in_hand] = type;
-        return SetStatus(shown + " set in hand (sound changes after a weapon switch)");
+        if (!old) return SetStatus(shown + " set in hand (sound changes after a weapon switch)");
+        W32(l.inventory + kInvRequest, 2);  // out and back in: the sound is chosen when a weapon comes out
+        g_swap_back = in_hand;
+        return SetStatus(shown + " set");
     }
     if (old && G<uint8_t>(old + kWeaponType) == type && (R32(old + kWeaponSuppressed) != 0) == suppressed)
         return SetStatus(shown + " is already in the other slot");
@@ -720,6 +733,16 @@ void AutoSuppressor(const Level& l) {
     DiagLog("weapons: suppressor on for %s (weapon %08X)", code.c_str(), unsigned(w));
 }
 
+// the weapon whose suppressor was changed in hand went out; once the other one is in hand it is brought back
+void SwapBack(const Level& l) {
+    if (!g_swap_back) return;
+    uint32_t held = R32(l.inventory + kInvHeld);
+    if (R32(l.inventory + kInvRequest) || held != R32(l.inventory + kInvSwitchTo)) return;  // still switching
+    if (held != g_swap_back && (Slot(l, 0) == g_swap_back || Slot(l, 1) == g_swap_back))
+        W32(l.inventory + kInvRequest, 2);
+    g_swap_back = 0;
+}
+
 // logs the level loader's step whenever it changes: shows that the tick runs and why a level is not read
 void Heartbeat() {
     static uint32_t last_state = 0xFFFFFFFF;
@@ -765,8 +788,13 @@ void WeaponsTick(X86Context& ctx) {
     if (++tick % 10 == 0) Refresh();
     Heartbeat();
     Level l;
-    if (ReadLevel(l)) AutoSuppressor(l);
-    else g_applied.clear();
+    if (ReadLevel(l)) {
+        AutoSuppressor(l);
+        SwapBack(l);
+    } else {
+        g_applied.clear();
+        g_swap_back = 0;
+    }
     if (kProbe) {
         PickupWatch();
         SuppressorProbe();
