@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -439,7 +440,74 @@ void DoFill() {
     if (!ReadLevel(l)) return SetStatus("Only during a level");
     for (int i = 0; i < 2; i++)
         if (uint32_t w = Slot(l, i)) FillWeapon(l, w, true);
-    SetStatus("Ammunition full");
+        SetStatus("Ammunition full");
+}
+
+}  // namespace
+
+namespace {
+
+// ---- temporary: finds where the game keeps "suppressor on" ----------------------------------------------------
+// Logs the words of the held weapon, its data and the inventory that settle on a new value and stay there
+struct Probe {
+    uint32_t cur, stable;
+    std::chrono::steady_clock::time_point since;
+};
+
+struct Region {
+    std::vector<Probe> words;
+    void Scan(const char* name, uint32_t at, uint32_t size) {
+        auto now = std::chrono::steady_clock::now();
+        if (words.empty()) {
+            words.resize(size / 4);
+            for (uint32_t i = 0; i < words.size(); i++) words[i] = {R32(at + i * 4), R32(at + i * 4), now};
+            return;
+        }
+        for (uint32_t i = 0; i < words.size(); i++) {
+            Probe& p = words[i];
+            uint32_t v = R32(at + i * 4);
+            if (v != p.cur) {
+                p.cur = v;
+                p.since = now;
+            } else if (p.cur != p.stable && now - p.since > std::chrono::milliseconds(1500)) {
+                LOGI("suppressor-probe: %s+0x%X: %08X -> %08X", name, unsigned(i * 4), unsigned(p.stable),
+                     unsigned(p.cur));
+                p.stable = p.cur;
+            }
+        }
+    }
+};
+
+void SuppressorProbe() {
+    static uint32_t last_weapon, last_data;
+    static int last_type = -1;
+    static Region object, data, inventory;
+    Level l;
+    if (!ReadLevel(l)) {
+        last_weapon = 0;
+        return;
+    }
+    uint32_t w = R32(l.inventory + kInvHeld);
+    if (!w) return;
+    int type = G<uint8_t>(w + kWeaponType);
+    if (w != last_weapon || type != last_type) {
+        last_weapon = w;
+        last_type = type;
+        object.words.clear();
+        data.words.clear();
+        inventory.words.clear();
+        std::string name = type < l.count ? Label(Decode(EntryKey(l, type))) : "?";
+        LOGI("suppressor-probe: weapon %08X type %d %s", unsigned(w), type, name.c_str());
+    }
+    uint32_t d = R32(w + kWeaponData);
+    if (d != last_data) {
+        last_data = d;
+        data.words.clear();
+        LOGI("suppressor-probe: data pointer %08X", unsigned(d));
+    }
+    object.Scan("weapon", w, 0x110);
+    if (d) data.Scan("data", d, 0x100);
+        inventory.Scan("inventory", l.inventory, 0x60);
 }
 
 }  // namespace
@@ -463,6 +531,7 @@ void WeaponsTick(X86Context& ctx) {
     if (int type = g_give.exchange(-1); type >= 0) DoGive(ctx, type);
     if (g_fill.exchange(false)) DoFill();
     if (++tick % 10 == 0) Refresh();
+    SuppressorProbe();
 }
 
 // the game's file opening: a first person bank the level lacks comes from another level's folder
