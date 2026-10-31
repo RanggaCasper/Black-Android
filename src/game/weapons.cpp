@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <cctype>
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -147,6 +148,23 @@ int SuppressedTwin(uint32_t manager, int type) {
     return type;
 }
 
+// black.log takes none of the LOGI lines, so the weapons' own diagnostics also go to a file beside it
+void DiagLog(const char* fmt, ...) {
+    char line[512];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    LOGI("%s", line);
+    static std::mutex lock;
+    std::lock_guard<std::mutex> guard(lock);
+    if (FILE* f = std::fopen("/storage/emulated/0/Black/SaveData/weapons_diag.log", "a")) {
+        std::fputs(line, f);
+        std::fputc('\n', f);
+        std::fclose(f);
+    }
+}
+
 // what the game thread found and the panel shows
 std::mutex g_lock;
 weapons::View g_view;
@@ -156,7 +174,7 @@ std::atomic<bool> g_fill{false};
 void SetStatus(const std::string& text) {
     std::lock_guard<std::mutex> lock(g_lock);
     g_view.status = text;
-    LOGI("weapons: %s", text.c_str());
+    DiagLog("weapons: %s", text.c_str());
 }
 
 std::string Lower(std::string s) {
@@ -403,7 +421,7 @@ void Refresh() {
         if (l.manager != dumped_manager) {
             dumped_manager = l.manager;
             for (int t = 0; t < l.count; t++)
-                LOGI("weapons: table %d = %s", t, Decode(EntryKey(l, t)).c_str());
+                DiagLog("weapons: table %d = %s", t, Decode(EntryKey(l, t)).c_str());
         }
         int slots = std::min<int>(G<uint8_t>(l.inventory + kInvSlotCount), 2);
         for (int t = 0; t < l.count; t++) {
@@ -507,7 +525,7 @@ struct Region {
                 p.cur = v;
                 p.since = now;
             } else if (p.cur != p.stable && now - p.since > std::chrono::milliseconds(1500)) {
-                LOGI("suppressor-probe: %s+0x%X: %08X -> %08X", name, unsigned(i * 4), unsigned(p.stable),
+                DiagLog("suppressor-probe: %s+0x%X: %08X -> %08X", name, unsigned(i * 4), unsigned(p.stable),
                      unsigned(p.cur));
                 p.stable = p.cur;
             }
@@ -534,13 +552,13 @@ void SuppressorProbe() {
         data.words.clear();
         inventory.words.clear();
         std::string name = type < l.count ? Label(Decode(EntryKey(l, type))) : "?";
-        LOGI("suppressor-probe: weapon %08X type %d %s", unsigned(w), type, name.c_str());
+        DiagLog("suppressor-probe: weapon %08X type %d %s", unsigned(w), type, name.c_str());
     }
     uint32_t d = R32(w + kWeaponData);
     if (d != last_data) {
         last_data = d;
         data.words.clear();
-        LOGI("suppressor-probe: data pointer %08X", unsigned(d));
+        DiagLog("suppressor-probe: data pointer %08X", unsigned(d));
     }
     object.Scan("weapon", w, 0x110);
     if (d) data.Scan("data", d, 0x100);
@@ -558,10 +576,10 @@ void Heartbeat() {
     if (state == last_state && ok == last_ok) return;
     last_state = state;
     last_ok = ok;
-    LOGI("weapons: tick world=%08X state=%X level=%d", unsigned(world), unsigned(state), ok);
+    DiagLog("weapons: tick world=%08X state=%X level=%d", unsigned(world), unsigned(state), ok);
     if (world && !ok && state == kStatePlaying) {
         uint32_t player = world + kWorldPlayer, inv = player + kPlayerInventory;
-        LOGI("weapons: kind=%u owner=%08X (player %08X) slots=%08X manager=%08X", unsigned(R32(player + kPlayerKind)),
+        DiagLog("weapons: kind=%u owner=%08X (player %08X) slots=%08X manager=%08X", unsigned(R32(player + kPlayerKind)),
              unsigned(R32(inv + kInvOwner)), unsigned(player), unsigned(R32(inv + kInvSlots)),
              unsigned(R32(kWeaponManager)));
     }
@@ -650,7 +668,7 @@ X86_FUNC(sub_001CEE10) {
         uint32_t arg = R32(ctx.esp + 8);
         int twin = SuppressedTwin(ctx.edi, int(arg & 0xFF));
         if (twin != int(arg & 0xFF)) {
-            LOGI("weapons: type %u becomes its suppressed twin %d", arg & 0xFF, twin);
+            DiagLog("weapons: type %u becomes its suppressed twin %d", arg & 0xFF, twin);
             W32(ctx.esp + 8, (arg & ~0xFFu) | uint32_t(twin));
         }
     }
