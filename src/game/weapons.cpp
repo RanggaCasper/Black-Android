@@ -129,7 +129,7 @@ std::string Label(const std::string& key_name) {
 // Weapons whose table code is listed get it set once when they are in hand and idle. The default list is what the
 // logs proved (Glock, AK-47); suppressor_codes.txt beside the log (codes separated by spaces, e.g. "GK1 AK1 MP1")
 // replaces it, to try other weapons.
-std::atomic<bool> g_auto_suppressor{true};
+std::atomic<bool> g_auto_suppressor{false};  // the panel offers both versions of each weapon; true also forces it on pickups
 std::set<std::string> g_supp_codes;
 std::map<uint32_t, int> g_applied;  // weapon object -> type it was handled as
 
@@ -152,6 +152,40 @@ void DiagLog(const char* fmt, ...) {
         std::fputc('\n', f);
         std::fclose(f);
     }
+}
+
+void LoadSuppressorCodes() {
+    static bool done;
+    if (done) return;
+    done = true;
+    g_supp_codes = {"GK1", "AK1"};
+    std::ifstream f("/storage/emulated/0/Black/SaveData/suppressor_codes.txt");
+    std::set<std::string> codes;
+    std::string tok;
+    while (f >> tok) {
+        for (char& c : tok) c = char(std::toupper(uint8_t(c)));
+        codes.insert(CodeOf(tok));
+    }
+    if (!codes.empty()) g_supp_codes = codes;
+    std::string all;
+    for (const std::string& c : g_supp_codes) all += c + " ";
+    DiagLog("weapons: auto suppressor for %s", all.c_str());
+}
+
+bool SuppSupportedCode(const std::string& code) {
+    LoadSuppressorCodes();
+    return g_supp_codes.count(code) != 0;
+}
+
+// does `type` of this manager's table take a suppressor?
+bool SuppSupportedType(uint32_t manager, int type) {
+    uint32_t table = manager ? R32(manager) : 0;
+    if (!table || type < 0) return false;
+    int count = G<uint8_t>(table + kTableCount);
+    uint32_t entries = R32(table + kTableEntries);
+    if (!entries || type >= count || count > 64) return false;
+    uint32_t e = entries + uint32_t(type) * kEntrySize;
+    return SuppSupportedCode(CodeOf(Decode(R32(e) | uint64_t(R32(e + 4)) << 32)));
 }
 
 // what the game thread found and the panel shows
@@ -416,10 +450,13 @@ void Refresh() {
         for (int t = 0; t < l.count; t++) {
             std::string name = Decode(EntryKey(l, t));
             if (name.empty()) continue;
-            bool held = false;
+            bool plain = false, supp = false;
             for (int i = 0; i < slots; i++)
-                if (uint32_t w = Slot(l, i)) held |= G<uint8_t>(w + kWeaponType) == t;
-            v.choices.push_back({Label(name), t, held});
+                if (uint32_t w = Slot(l, i))
+                    if (G<uint8_t>(w + kWeaponType) == t) (R32(w + kWeaponSuppressed) ? supp : plain) = true;
+            bool can = SuppSupportedCode(CodeOf(name));
+            v.choices.push_back({Label(name), t, can ? plain : plain || supp});
+            if (can) v.choices.push_back({Label(name) + " + Suppressor", t | 0x100, supp});  // 0x100: with the suppressor
         }
         std::sort(v.choices.begin(), v.choices.end(), [](const auto& a, const auto& b) { return a.label < b.label; });
     }
@@ -443,10 +480,12 @@ void FillWeapon(const Level& l, uint32_t weapon, bool top_up) {
         if (uint32_t mag = R32(weapon + kWeaponMagazine + m * 4)) FillType(l, R32(mag + kMagazineData), top_up);
 }
 
-void DoGive(X86Context& ctx, int type) {
+void DoGive(X86Context& ctx, int code) {
     Level l;
     if (!ReadLevel(l)) return SetStatus("Only during a level");
-    if (type < 0 || type >= l.count) return;
+    int type = code & 0xFF;
+    bool suppressed = (code & 0x100) != 0;
+    if (code < 0 || type >= l.count) return;
     std::string name = Decode(EntryKey(l, type));
     if (G<uint8_t>(l.inventory + kInvSlotCount) < 2) return SetStatus("The player has a single weapon slot here");
     if (R32(l.inventory + kInvRequest) || R32(l.inventory + kInvHeld) != R32(l.inventory + kInvSwitchTo))
@@ -471,10 +510,12 @@ void DoGive(X86Context& ctx, int type) {
         ctx.edx = edx;
     }
     W32(slots + uint32_t(other) * 4, weapon);
+    W32(weapon + kWeaponSuppressed, suppressed ? 1 : 0);  // before it comes out: the sound is chosen then
+    g_applied[weapon] = type;
     FillWeapon(l, weapon, false);
     W32(l.inventory + kInvRequest, 2);  // out it comes, as the d-pad brings it
     bool model = EnsureWorldModel(ctx, name, G<uint8_t>(l.world + kWorldSilver) != 0);
-    SetStatus(Label(name) + (model ? " given" : " given (dropped, it will vanish)"));
+    SetStatus(Label(name) + (suppressed ? " + Suppressor" : "") + (model ? " given" : " given (dropped, it will vanish)"));
     Refresh();
 }
 
@@ -650,24 +691,6 @@ void PickupEvent(uint32_t category, uint32_t type, uint32_t ret) {
     for (size_t i = 0; i < w.addr.size(); i++) w.quiet[i] = w.event - w.changed[i] > 2.0;
 }
 
-void LoadSuppressorCodes() {
-    static bool done;
-    if (done) return;
-    done = true;
-    g_supp_codes = {"GK1", "AK1"};
-    std::ifstream f("/storage/emulated/0/Black/SaveData/suppressor_codes.txt");
-    std::set<std::string> codes;
-    std::string tok;
-    while (f >> tok) {
-        for (char& c : tok) c = char(std::toupper(uint8_t(c)));
-        codes.insert(CodeOf(tok));
-    }
-    if (!codes.empty()) g_supp_codes = codes;
-    std::string all;
-    for (const std::string& c : g_supp_codes) all += c + " ";
-    DiagLog("weapons: auto suppressor for %s", all.c_str());
-}
-
 // the weapon in hand, once it is idle: its suppressor goes on, if its type is on the list and it is not on already
 void AutoSuppressor(const Level& l) {
     if (!g_auto_suppressor) return;
@@ -786,12 +809,21 @@ X86_FUNC(sub_001D3790) {
     __imp__sub_001D3790(ctx, base);
 }
 
-// A weapon created (a pickup, the level's loadout, the panel): a new object is handled afresh by AutoSuppressor.
+// A weapon created (a pickup, the level's loadout, the panel): with auto suppressor on, a player's weapon of a listed
+// type gets it at once, before it is first brought out (the sound is chosen then).
 // edi the weapon manager; (owner, type, 0) on the stack; eax the weapon after.
 X86_EXTERN_FUNC(__imp__sub_001CEE10);
 X86_FUNC(sub_001CEE10) {
+    uint32_t world = R32(kWorld);
+    int type = int(R32(ctx.esp + 8) & 0xFF);
+    bool want = g_auto_suppressor && world && R32(ctx.esp + 4) == world + kWorldPlayer && SuppSupportedType(ctx.edi, type);
     __imp__sub_001CEE10(ctx, base);
-    if (ctx.eax) g_applied.erase(ctx.eax);
+    if (!ctx.eax) return;
+    g_applied.erase(ctx.eax);
+    if (want) {
+        W32(ctx.eax + kWeaponSuppressed, 1);
+        g_applied[ctx.eax] = type;
+    }
 }
 
 // the game's pickup message: (ecx kind, al type, dl, ...): a suppressor picked up is kind 4
