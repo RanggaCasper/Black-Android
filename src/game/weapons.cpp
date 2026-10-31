@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <cctype>
+#include <deque>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -582,6 +583,85 @@ void SuppressorProbe() {
     inventory.Scan("inventory", l.inventory, 0x100);
 }
 
+// ---- temporary: what the pickup of a suppressor changes ---------------------------------------------------------
+// The game's pickup message (sub_0012B510: ecx the kind, 4 the "silent" ones, a suppressor; al which of the nine) marks
+// the moment. The words of the weapon pool, the inventory and the player that held still for two seconds before it and
+// differ a second after are logged, so no timing is needed.
+struct Watch {
+    std::vector<uint32_t> addr, now, before;
+    std::deque<std::vector<uint32_t>> hist;  // the last ticks, the oldest is the state before the pickup
+    std::vector<double> changed;             // seconds of each word's last change
+    std::vector<char> quiet;
+    double event = -1;
+};
+Watch g_watch;
+
+void WatchGather(const Level& l, std::vector<uint32_t>& addr) {
+    addr.clear();
+    uint32_t pool = R32(l.manager + 4);
+    for (uint32_t i = 0; pool && i < 8 * 0x110 / 4; i++) addr.push_back(pool + i * 4);
+    for (uint32_t i = 0; i < 0x80; i++) addr.push_back(l.inventory + i * 4);
+    for (uint32_t i = 0; i < 0xC0; i++) addr.push_back(l.player + i * 4);
+}
+
+std::string WatchName(const Level& l, uint32_t a) {
+    char s[64];
+    uint32_t pool = R32(l.manager + 4);
+    if (pool && a >= pool && a < pool + 8 * 0x110) std::snprintf(s, sizeof(s), "weapon[%u]+0x%X", (a - pool) / 0x110, (a - pool) % 0x110);
+    else if (a >= l.inventory && a < l.inventory + 0x200) std::snprintf(s, sizeof(s), "inventory+0x%X", a - l.inventory);
+    else std::snprintf(s, sizeof(s), "player+0x%X", a - l.player);
+    return s;
+}
+
+void PickupWatch() {
+    Watch& w = g_watch;
+    Level l;
+    if (!ReadLevel(l)) {
+        w = Watch();
+        return;
+    }
+    double t = Seconds();
+    std::vector<uint32_t> addr;
+    WatchGather(l, addr);
+    std::vector<uint32_t> now(addr.size());
+    for (size_t i = 0; i < addr.size(); i++) now[i] = R32(addr[i]);
+    if (addr != w.addr) {
+        w = Watch();
+        w.addr = addr;
+        w.now = now;
+        w.changed.assign(addr.size(), -100.0);
+        w.quiet.assign(addr.size(), 0);
+        return;
+    }
+    for (size_t i = 0; i < addr.size(); i++)
+        if (now[i] != w.now[i]) w.changed[i] = t;
+    w.now = now;
+    w.hist.push_back(now);
+    if (w.hist.size() > 8) w.hist.pop_front();
+    if (w.event >= 0 && t - w.event > 1.0) {
+        int shown = 0;
+        for (size_t i = 0; i < addr.size() && shown < 80; i++) {
+            if (!w.quiet[i] || now[i] == w.before[i] || t - w.changed[i] < 0.4) continue;
+            DiagLog("t=%.1f SILENT-PICKUP %s: %08X -> %08X", t, WatchName(l, addr[i]).c_str(), unsigned(w.before[i]),
+                    unsigned(now[i]));
+            shown++;
+        }
+        DiagLog("t=%.1f SILENT-PICKUP end, %d words", t, shown);
+        w.event = -1;
+    }
+}
+
+void PickupEvent(uint32_t category, uint32_t type) {
+    Level l;
+    if (!ReadLevel(l)) return;
+    DiagLog("t=%.1f pickup message: kind %u, type %u", Seconds(), category, type);
+    Watch& w = g_watch;
+    if (category != 4 || w.addr.empty() || w.hist.empty()) return;
+    w.event = Seconds();
+    w.before = w.hist.front();
+    for (size_t i = 0; i < w.addr.size(); i++) w.quiet[i] = w.event - w.changed[i] > 2.0;
+}
+
 // logs the level loader's step whenever it changes: shows that the tick runs and why a level is not read
 void Heartbeat() {
     static uint32_t last_state = 0xFFFFFFFF;
@@ -626,6 +706,7 @@ void WeaponsTick(X86Context& ctx) {
     if (g_fill.exchange(false)) DoFill();
     if (++tick % 10 == 0) Refresh();
     Heartbeat();
+    PickupWatch();
     SuppressorProbe();
 }
 
@@ -690,4 +771,11 @@ X86_FUNC(sub_001CEE10) {
         }
     }
     __imp__sub_001CEE10(ctx, base);
+}
+
+// the game's pickup message: (ecx kind, al type, dl, ...): a suppressor picked up is kind 4
+X86_EXTERN_FUNC(__imp__sub_0012B510);
+X86_FUNC(sub_0012B510) {
+    PickupEvent(ctx.ecx, ctx.eax & 0xFF);
+    __imp__sub_0012B510(ctx, base);
 }
