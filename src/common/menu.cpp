@@ -250,7 +250,7 @@ enum RowId { kRenderResolution, kMaxFps, kVsync, kFpsCounter, kAniso, kReloadBlu
              kCheckUpdates, kTouchSensitivity, kLeftDeadzone, kRightDeadzone, kLeftSensitivity, kRightSensitivity,
              kScreenFilter, kGyroInvertX, kGyroInvertY, kUnlockLevels, kUnlockBlackOps, kTouchSkin, kCredit, kBloom,
              kFog, kAntiAliasing, kHdr, kEsp, kAimbot, kTouchStick, kDynamicRes, kDynamicTarget, kDynamicMin,
-             kDynamicMax, kDynamicHold, kAutoUpdate };
+             kDynamicMax, kDynamicHold, kAutoUpdate, kInfiniteMedkits };
 
 using rows::Kind;
 using rows::Row;
@@ -326,6 +326,7 @@ constexpr Row kCheatRows[] = {
     {Kind::Value, kNoRecoil, "NO RECOIL"},
     {Kind::Heading, -1, "PLAYER"},
     {Kind::Value, kGodMode, "GOD MODE"},
+    {Kind::Value, kInfiniteMedkits, "INFINITE MEDKITS"},
     {Kind::Value, kOneHitKill, "ONE-HIT KILL"},
     {Kind::Value, kEsp, "ESP LINES"},
     {Kind::Value, kAimbot, "AIMBOT (WHILE AIMING IN)"},  // esp.cpp turns the view only at a zoom above 1
@@ -348,6 +349,7 @@ constexpr Credit kCredits[] = {
     {"DATFOOLDIVE", "ANY WEAPON IN ANY LEVEL", "https://github.com/datfooldive"},
     {"BAGASROMADON", "BUTTON SKIN", "https://github.com/bagasromadon"},
     {"Zukiru", "HDR SHADER", nullptr},
+    {"UNKNUW", "SUPPRESSOR + MEDKITS", "https://github.com/UnknuwProjects"},
     {"BUILT WITH", nullptr, nullptr},
     {"XBOXXBE-RECOMP", "TGP482", nullptr},
     {"SDL3, GLSLANG, TOML++", "LIBRARIES", nullptr},
@@ -406,6 +408,7 @@ bool* ToggleFlag(Settings& s, int id) {
         case kInfiniteAmmo: return &o.infinite_ammo;
         case kNoRecoil: return &o.no_recoil;
         case kGodMode: return &o.god_mode;
+        case kInfiniteMedkits: return &o.infinite_medkits;
         case kOneHitKill: return &o.one_hit_kill;
         case kInfiniteGrenades: return &o.infinite_grenades;
         case kUnlockLevels: return &o.unlock_levels;
@@ -685,6 +688,7 @@ void RestoreDefaults(int page) {
         o.no_recoil = none.no_recoil;
         o.game_speed = none.game_speed;
         o.god_mode = none.god_mode;
+        o.infinite_medkits = none.infinite_medkits;
         o.one_hit_kill = none.one_hit_kill;
         o.infinite_grenades = none.infinite_grenades;
         o.unlock_levels = none.unlock_levels;
@@ -716,6 +720,7 @@ void RestoreDefaults(int page) {
     o.no_recoil = keep.no_recoil;
     o.game_speed = keep.game_speed;
     o.god_mode = keep.god_mode;
+    o.infinite_medkits = keep.infinite_medkits;
     o.one_hit_kill = keep.one_hit_kill;
     o.infinite_grenades = keep.infinite_grenades;
     o.unlock_levels = keep.unlock_levels;
@@ -851,14 +856,56 @@ void DrawWeapons() {
     constexpr int kColumns = 3;
     float gap = ImGui::GetStyle().ItemSpacing.x;
     float w = (ImGui::GetContentRegionAvail().x - gap * (kColumns - 1)) / kColumns;
+    // two groups (weapons.cpp sorts them): the game's own suppressors, then the rest; each starts a new row of columns
+    struct GroupTitle {
+        const char* name;  // brighter
+        const char* hint;  // dim, beside it
+    };
+    static const GroupTitle kGroupTitles[] = {{"SUPPORTED SUPPRESSOR", "PRESS Y TO TAKE IT OFF"},
+                                              {"UNSUPPORTED SUPPRESSOR", "EXPERIMENTAL"}};
+    // the second group has two blocks, each with a dim heading of its own
+    auto sub_title = [](const char* text) {
+        ImGui::PushStyleColor(ImGuiCol_Text, kDim);
+        ImGui::TextUnformatted(Ui(text).c_str());
+        ImGui::PopStyleColor();
+    };
+    bool sound_only = false;
+    int group = -1, column = 0, variant = -1;  // variant: 0 the plain guns, 1 those with the suppressor (code bit 0x100)
     for (size_t i = 0; i < v.choices.size(); i++) {
         const weapons::Choice& c = v.choices[i];
-        if (i % kColumns) ImGui::SameLine();
+        if (c.group == group && variant != ((c.type & 0x100) ? 1 : 0)) {
+            // the second block of a group starts on a row of its own
+            variant = (c.type & 0x100) ? 1 : 0;
+            column = 0;
+            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.25f));
+            if (group == 1) sub_title("WITH SUPPRESSOR (PERMANENT)");
+        }
+        if (c.group != group) {
+            group = c.group;
+            variant = (c.type & 0x100) ? 1 : 0;
+            column = 0;
+            const GroupTitle& title = kGroupTitles[std::clamp(group, 0, 1)];
+            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.4f));
+            ImGui::TextUnformatted(Ui(title.name).c_str());  // the panel's own text colour
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Text, kDim);
+            ImGui::TextUnformatted(Ui(title.hint).c_str());
+            ImGui::PopStyleColor();
+            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.1f));
+            if (group == 1) sub_title("NO SUPPRESSOR");
+        }
+        if (column++ % kColumns) ImGui::SameLine();
         ImGui::PushID(c.type);
         if (c.held) ImGui::PushStyleColor(ImGuiCol_Text, kHeading);  // in one of the two slots now
         if (ImGui::Button(c.label.c_str(), ImVec2(w, 0))) weapons::Give(c.type);
         if (c.held) ImGui::PopStyleColor();
         ImGui::PopID();
+        sound_only = sound_only || c.sound_only;
+    }
+    if (sound_only) {  // the star of those labels, under the last block
+        ImGui::PushStyleColor(ImGuiCol_Text, kDim);
+        ImGui::TextUnformatted(Ui("* SILENCED SOUND ONLY").c_str());
+        ImGui::PopStyleColor();
     }
     Section("SUPPLIES");
     if (ImGui::Button(Ui("FILL AMMUNITION").c_str(), ImVec2(w, 0))) weapons::FillAmmo();
