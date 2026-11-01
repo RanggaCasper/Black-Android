@@ -27,6 +27,7 @@ final class UpdateChecker {
 
     private static final String PREFS = "updates";
     private static final String SKIPPED = "skipped_tag";
+    private static final String STARTUP = "check_at_startup";
 
     static final class Release {
         String tag;      // v1.2.3
@@ -72,6 +73,17 @@ final class UpdateChecker {
     static void skip(Context context, String tag) {
         context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putString(SKIPPED, tag).apply();
+    }
+
+    // STARTUP UPDATE CHECK in the options menu: whether each launch asks GitHub, on unless turned off
+    static boolean startupCheck(Context context) {
+        return context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getBoolean(STARTUP, true);
+    }
+
+    static void setStartupCheck(Context context, boolean on) {
+        context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(STARTUP, on).apply();
     }
 
     static String installedVersion(Context app) {

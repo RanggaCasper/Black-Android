@@ -56,12 +56,23 @@ public class BlackActivity extends SDLActivity {
             if (v != null) v.setOnCapturedPointerListener(BlackActivity::onCapturedPointer);
         File own = getExternalFilesDir(null);
         if (own != null) new File(own, "assets").mkdirs();
-        // every launch: a newer release is shown once nothing else is asked
-        UpdateChecker.check(this, false, (r, failed) -> {
-            if (r == null) return;
-            update = r;
-            tellOfUpdate();
-        });
+        // every launch unless turned off: a newer release is shown once nothing else is asked
+        if (UpdateChecker.startupCheck(this)) {
+            UpdateChecker.check(this, false, (r, failed) -> {
+                if (r == null) return;
+                update = r;
+                tellOfUpdate();
+            });
+        }
+    }
+
+    // STARTUP UPDATE CHECK in the options menu, from the game's thread
+    public boolean isStartupCheckEnabled() {
+        return UpdateChecker.startupCheck(this);
+    }
+
+    public void setStartupCheckEnabled(boolean on) {
+        UpdateChecker.setStartupCheck(this, on);
     }
 
     // A controller some phones' game services pass on as a virtual device (MIUI's took a DualShock 4 on a Redmi Note

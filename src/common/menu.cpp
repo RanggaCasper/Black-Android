@@ -11,13 +11,10 @@
 #include <thread>
 #include <utility>
 #include <vector>
-#include <jni.h>
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_system.h>
 #include <imgui.h>
 #include <imgui_internal.h>
-
 
 #include "app/app.h"
 #include "audio/output.h"
@@ -63,6 +60,8 @@ uint32_t Percent();
 // native/update.cpp: the activity asks GitHub for a newer release and says what it found
 namespace host {
 void CheckForUpdates();
+bool StartupCheck();  // whether each launch asks GitHub
+void SetStartupCheck(bool on);
 }  // namespace host
 
 namespace app {
@@ -640,38 +639,11 @@ void StepInputRow(int id, int step, char (&text)[64]) {
             std::snprintf(text, sizeof(text), format, kLanguageNames[i]);
             break;
         }
-           case kAutoUpdate: {
-    // Mendapatkan lingkungan JNI dari SDL / Native Activity
-    JNIEnv* env = (JNIEnv*)SDL_GetAndroidJNIEnv();
-    jobject activity = (jobject)SDL_GetAndroidActivity();
-    if (env && activity) {
-        jclass clazz = env->GetObjectClass(activity);
-        
-        // Membaca status saat ini dari SharedPreferences via Java method
-        jmethodID getMethod = env->GetStaticMethodID(clazz, "isStartupCheckEnabled", "(Landroid/content/Context;)Z");
-        bool auto_check = true;
-        if (getMethod) {
-            auto_check = env->CallStaticBooleanMethod(clazz, getMethod, activity);
-        }
-
-        // Jika tombol ditekan (step != 0), ubah statusnya (toggle)
-        if (step) {
-            auto_check = !auto_check;
-            jmethodID setMethod = env->GetStaticMethodID(clazz, "setStartupCheckEnabled", "(Landroid/content/Context;Z)V");
-            if (setMethod) {
-                env->CallStaticVoidMethod(clazz, setMethod, activity, (jboolean)auto_check);
-            }
-        }
-        
-        env->DeleteLocalRef(clazz);
-        env->DeleteLocalRef(activity);
-        
-        std::snprintf(text, sizeof(text), "%s", OnOff(auto_check));
-    } else {
-        std::snprintf(text, sizeof(text), "OFF");
-    }
-    break;
-      }
+        case kAutoUpdate:
+            // kept in the activity's preferences: it is read at launch, before the game's settings
+            if (step) host::SetStartupCheck(!host::StartupCheck());
+            std::snprintf(text, sizeof(text), "%s", OnOff(host::StartupCheck()));
+            break;
     }
 }
 
