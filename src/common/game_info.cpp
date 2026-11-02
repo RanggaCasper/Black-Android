@@ -119,6 +119,7 @@ const app::GameInfo app::kGame = {
                 {"god_mode", &game::Opt().god_mode, nullptr},
                 {"one_hit_kill", &game::Opt().one_hit_kill, nullptr},
                 {"infinite_grenades", &game::Opt().infinite_grenades, nullptr},
+                {"infinite_medkits", &game::Opt().infinite_medkits, nullptr},
                 {"unlock_levels", &game::Opt().unlock_levels, nullptr},
                 {"unlock_black_ops", &game::Opt().unlock_black_ops, nullptr},
                 {"esp", &game::Opt().esp, nullptr},
