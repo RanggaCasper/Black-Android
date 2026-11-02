@@ -150,12 +150,12 @@ int StepRange(int value, int lo, int hi, int inc, int step) {
 
 void Section(const char* title) {
     float em = ImGui::GetFontSize();
-    ImGui::Dummy(ImVec2(0, em * 0.5f));
+    ImGui::Dummy(ImVec2(0, em * 0.3f));
     ImGui::PushStyleColor(ImGuiCol_Text, kHeading);
     ImGui::TextUnformatted(Ui(title).c_str());
     ImGui::PopStyleColor();
     ImGui::Separator();
-    ImGui::Dummy(ImVec2(0, em * 0.2f));
+    ImGui::Dummy(ImVec2(0, em * 0.1f));
 }
 
 constexpr float kValueEms = 12.0f;  // the value column's width
@@ -877,7 +877,7 @@ void DrawWeapons() {
             // the second block of a group starts on a row of its own
             variant = (c.type & 0x100) ? 1 : 0;
             column = 0;
-            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.25f));
+            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.15f));
             if (group == 1) sub_title("WITH SUPPRESSOR (PERMANENT)");
         }
         if (c.group != group) {
@@ -885,13 +885,13 @@ void DrawWeapons() {
             variant = (c.type & 0x100) ? 1 : 0;
             column = 0;
             const GroupTitle& title = kGroupTitles[std::clamp(group, 0, 1)];
-            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.4f));
+            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.25f));
             ImGui::TextUnformatted(Ui(title.name).c_str());  // the panel's own text colour
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Text, kDim);
             ImGui::TextUnformatted(Ui(title.hint).c_str());
             ImGui::PopStyleColor();
-            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.1f));
+            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.05f));
             if (group == 1) sub_title("NO SUPPRESSOR");
         }
         if (column++ % kColumns) ImGui::SameLine();
@@ -982,16 +982,28 @@ void DragScroll(float em) {
     glide *= std::max(0.0f, 1.0f - kFriction * io.DeltaTime);
 }
 
+// the font's size as a share of the screen's height, and the most of its width the panel's fifty ems may take; the panel
+// is sized for a thumb: the smaller of the two wins, so a tall screen and a narrow one both fit
+constexpr float kUiHeightShare = 0.030f;
+constexpr float kUiWidthShare = 0.0192f;
+
 void DrawPanel() {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     float em = ImGui::GetFontSize();
-    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(em * 50, em * 32), ImGuiCond_Always);
+    // below the touch button at the top centre, and short enough to leave the HUD's corners in view; what does not
+    // fit scrolls
+    ImGui::SetNextWindowPos(ImVec2(vp->GetCenter().x, vp->Pos.y + vp->Size.y * 0.12f), ImGuiCond_Always,
+                            ImVec2(0.5f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(std::min(em * 50, vp->Size.x * 0.96f), std::min(em * 32, vp->Size.y * 0.84f)),
+                             ImGuiCond_Always);
     for (const auto& [col, color] : kPanelColors) ImGui::PushStyleColor(col, color);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em * 1.6f, em * 1.2f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em * 1.6f, em * 0.9f));
+    // taller buttons and rows with room between them: a thumb, not a mouse
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em * 0.7f, em * 0.45f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(em * 0.6f, em * 0.25f));
     constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
                                         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoTitleBar;
     if (ImGui::Begin("##settings", nullptr, kFlags)) {
@@ -1012,7 +1024,7 @@ void DrawPanel() {
         DrawFooter(em);
     }
     ImGui::End();
-    ImGui::PopStyleVar(4);
+    ImGui::PopStyleVar(6);
     ImGui::PopStyleColor(int(std::size(kPanelColors)));
 }
 
@@ -1135,8 +1147,10 @@ void DrawUi(double fps) {
     if (MenuOpen()) io.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
     else io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
     io.KeyRepeatRate = 0.1f;  // held arrows step ten times a second, ImGui's twenty is too fast for settings
-    // scale the font with the output height
-    io.FontGlobalScale = std::max(1.0f, io.DisplaySize.y / 720.0f);
+    // scale the font with the output: the font's own pixel size is the size drawn now over the scale it is drawn at
+    float base_px = ImGui::GetFontSize() / std::max(io.FontGlobalScale, 0.01f);
+    float em_px = std::min(io.DisplaySize.y * kUiHeightShare, io.DisplaySize.x * kUiWidthShare);
+    io.FontGlobalScale = std::max(1.0f, em_px / base_px);
     if (MenuOpen()) {
         PollCapture();
         DrawPanel();
