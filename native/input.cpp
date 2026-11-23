@@ -14,6 +14,7 @@
 
 #include "app/app.h"
 #include "common/options.h"
+#include "common/mouse_keyboard.h"
 #include "core/log.h"
 #include "host.h"
 
@@ -60,6 +61,12 @@ void Read(SDL_Gamepad* pad, Pad& p) {
     // 0 to 32767 into 0 to 255
     p.analog[6] = uint8_t(std::max(axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER), 0) >> 7);
     p.analog[7] = uint8_t(std::max(axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER), 0) >> 7);
+    // Android exposes digital L2/R2 as joystick buttons 15/16. Some handhelds have no trigger axes at all.
+    SDL_Joystick* joystick = SDL_GetGamepadJoystick(pad);
+    if (joystick && !SDL_GamepadHasAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) && SDL_GetJoystickButton(joystick, 15))
+        p.analog[6] = 0xFF;
+    if (joystick && !SDL_GamepadHasAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) && SDL_GetJoystickButton(joystick, 16))
+        p.analog[7] = 0xFF;
     // SDL's sticks have y down; not plain negation: -32768 has no positive
     p.lx = int16_t(axis(SDL_GAMEPAD_AXIS_LEFTX));
     p.ly = int16_t(-1 - axis(SDL_GAMEPAD_AXIS_LEFTY));
@@ -154,6 +161,21 @@ void ShapeSticks(Pad& p) {
     Shape(p.rx, p.ry, o.right_deadzone, o.right_sensitivity);
 }
 
+// remap only controller input, before touch and keyboard are merged; game menus retain their fixed navigation
+void Remap(Pad& p) {
+    if (InGameMenu()) return;
+    Pad original = p;
+    p.buttons = 0;
+    std::fill(std::begin(p.analog), std::end(p.analog), 0);
+    const auto& map = game::Opt().controller_buttons;
+    for (size_t i = 0; i < map.size(); i++) {
+        uint8_t value = i < 8 ? original.analog[i] : ((original.buttons & (1u << (i - 8))) ? 0xff : 0);
+        uint32_t target = map[i];
+        if (target < 8) p.analog[target] = std::max(p.analog[target], value);
+        else if (target < 16 && value > 0x20) p.buttons |= uint16_t(1u << (target - 8));
+    }
+}
+
 }  // namespace
 
 // BlackActivity: the loose controller's buttons, sticks and triggers, and its letting go when the app loses the focus
@@ -212,6 +234,7 @@ Pad Poll(int port) {
     constexpr int16_t kStickPushed = 16000;
     auto pushed = [](int16_t v) { return v > kStickPushed || v < -kStickPushed; };
     if (port == 0) MergeLoose(p);
+    Remap(p);
     ShapeSticks(p);
     bool analog = std::any_of(std::begin(p.analog), std::end(p.analog), [](uint8_t a) { return a > 0x20; });
     if (p.buttons || analog || pushed(p.lx) || pushed(p.ly) || pushed(p.rx) || pushed(p.ry)) touch::PadUsed();

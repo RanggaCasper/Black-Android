@@ -250,7 +250,8 @@ enum RowId { kRenderResolution, kMaxFps, kVsync, kFpsCounter, kAniso, kReloadBlu
              kCheckUpdates, kTouchSensitivity, kLeftDeadzone, kRightDeadzone, kLeftSensitivity, kRightSensitivity,
              kScreenFilter, kGyroInvertX, kGyroInvertY, kUnlockLevels, kUnlockBlackOps, kTouchSkin, kCredit, kBloom,
              kFog, kAntiAliasing, kHdr, kEsp, kAimbot, kTouchStick, kDynamicRes, kDynamicTarget, kDynamicMin,
-             kDynamicMax, kDynamicHold, kAutoUpdate };
+             kDynamicMax, kDynamicHold, kAutoUpdate, kControllerButton0,
+             kControllerButtonLast = kControllerButton0 + 15, kControllerReset };
 
 using rows::Kind;
 using rows::Row;
@@ -296,6 +297,24 @@ constexpr Row kTouchRows[] = {
     {Kind::Value, kGyroSensitivity, "GYRO SENSITIVITY"},
     {Kind::Value, kGyroInvertX, "GYRO INVERT X"},
     {Kind::Value, kGyroInvertY, "GYRO INVERT Y"},
+    {Kind::Heading, -1, "CONTROLLER BUTTONS"},
+    {Kind::Value, kControllerButton0 + 0, "BUTTON A"},
+    {Kind::Value, kControllerButton0 + 1, "BUTTON B"},
+    {Kind::Value, kControllerButton0 + 2, "BUTTON X"},
+    {Kind::Value, kControllerButton0 + 3, "BUTTON Y"},
+    {Kind::Value, kControllerButton0 + 4, "BUTTON R1"},
+    {Kind::Value, kControllerButton0 + 5, "BUTTON L1"},
+    {Kind::Value, kControllerButton0 + 6, "BUTTON L2"},
+    {Kind::Value, kControllerButton0 + 7, "BUTTON R2"},
+    {Kind::Value, kControllerButton0 + 8, "DPAD UP"},
+    {Kind::Value, kControllerButton0 + 9, "DPAD DOWN"},
+    {Kind::Value, kControllerButton0 + 10, "DPAD LEFT"},
+    {Kind::Value, kControllerButton0 + 11, "DPAD RIGHT"},
+    {Kind::Value, kControllerButton0 + 12, "BUTTON START"},
+    {Kind::Value, kControllerButton0 + 13, "BUTTON BACK"},
+    {Kind::Value, kControllerButton0 + 14, "BUTTON L3"},
+    {Kind::Value, kControllerButton0 + 15, "BUTTON R3"},
+    {Kind::Value, kControllerReset, "RESET CONTROLLER BUTTONS"},
 };
 
 // on the game's control setup page, under its own rows
@@ -531,6 +550,23 @@ bool StepCheatRow(int id, int step, char (&text)[64]) {
 // the general, mouse and keyboard rows that are no ON / OFF, stepped first
 void StepInputRow(int id, int step, char (&text)[64]) {
     game::Options& o = game::Opt();
+    if (id >= kControllerButton0 && id <= kControllerButtonLast) {
+        // action names describe the game's default controller layout
+        static constexpr const char* kTargets[] = {
+            "RELOAD (A)", "MELEE (B)", "INTERACT (X)", "SUPPRESSOR (Y)",
+            "BLACK", "NEXT TRACK (WHITE)", "GRENADE (LT)", "FIRE (RT)",
+            "FIRING MODE (UP)", "HEALTH (DOWN)", "WEAPON DOWN (LEFT)", "WEAPON UP (RIGHT)",
+            "PAUSE (START)", "OBJECTIVES (BACK)", "CROUCH (L3)", "AIM (R3)", "UNBOUND"};
+        uint32_t& target = o.controller_buttons[size_t(id - kControllerButton0)];
+        if (step) target = uint32_t(StepIndex(int(target), step, int(std::size(kTargets))));
+        std::snprintf(text, sizeof(text), "%s", kTargets[std::min(target, uint32_t(std::size(kTargets) - 1))]);
+        return;
+    }
+    if (id == kControllerReset) {
+        if (step) o.controller_buttons = game::Options{}.controller_buttons;
+        std::snprintf(text, sizeof(text), "RESET");
+        return;
+    }
     switch (id) {
         case kAudioOutput:
             std::snprintf(text, sizeof(text), "%s", kAudioOutputNames[StepTable(kAudioOutputs, o.audio_output, step)]);

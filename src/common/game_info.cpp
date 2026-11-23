@@ -37,6 +37,12 @@ void Load(const void* table) {
     o.touch_sensitivity = float(t["touch_sensitivity"].value_or(double(o.mouse_sensitivity)));
     o.left_sensitivity = float(t["left_stick_sensitivity"].value_or(double(o.left_sensitivity)));
     o.right_sensitivity = float(t["right_stick_sensitivity"].value_or(double(o.right_sensitivity)));
+    if (const toml::array* buttons = t["controller_buttons"].as_array()) {
+        for (size_t i = 0; i < o.controller_buttons.size() && i < buttons->size(); i++) {
+            auto value = (*buttons)[i].value<int64_t>();
+            if (value && *value >= 0 && *value <= 16) o.controller_buttons[i] = uint32_t(*value);
+        }
+    }
     std::string language = t["language"].value_or(o.language);
     bool known = std::find(std::begin(kLanguages), std::end(kLanguages), language) != std::end(kLanguages);
     if (known) o.language = language;
@@ -59,6 +65,9 @@ void Save(void* table) {
     t.insert("touch_sensitivity", double(o.touch_sensitivity));
     t.insert("left_stick_sensitivity", double(o.left_sensitivity));
     t.insert("right_stick_sensitivity", double(o.right_sensitivity));
+    toml::array buttons;
+    for (uint32_t button : o.controller_buttons) buttons.push_back(int64_t(button));
+    t.insert("controller_buttons", std::move(buttons));
     t.insert("language", o.language);
     toml::table keys;
     for (const auto& [id, value] : o.keys) keys.insert(id, value);

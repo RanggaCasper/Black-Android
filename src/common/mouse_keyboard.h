@@ -44,6 +44,7 @@ std::string TouchName(int button);
 // the game's own menus
 void SeenPad(const Pad& pad);  // a controller's report before the keys join it: its input hides the cursor
 void SetMenu(bool menu);       // game thread, each tick: a menu page is up
+bool InGameMenu();             // the game's menus keep the standard controller navigation
 bool KeyboardActive();         // keyboard or mouse used last, not a controller
 bool CursorShown();            // in a menu with the keyboard or mouse used last
 // the cursor in the shown frame, 0 to 1 across and down, and the left button; false while it is not shown
