@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <array>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -44,6 +45,8 @@ struct Options {
     uint32_t right_deadzone = 0;
     float left_sensitivity = 1.0f;
     float right_sensitivity = 1.0f;
+    // physical buttons to Xbox buttons, 16 disables a button
+    std::array<uint32_t, 16> controller_buttons = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
     uint32_t audio_output = 0;  // audio::kOutputAuto, kOutputStereo, kOutputSurround or kOutputMono
     std::string language = "int";  // one of kLanguages
     bool infinite_ammo = false;  // cheat: the player's magazine and reserve never go down

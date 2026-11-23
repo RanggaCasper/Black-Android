@@ -377,6 +377,7 @@ void SeenPad(const Pad& p) {
 }
 
 void SetMenu(bool menu) { g_menu = menu; }
+bool InGameMenu() { return g_menu.load(); }
 
 bool KeyboardActive() { return g_keyboard; }
 
